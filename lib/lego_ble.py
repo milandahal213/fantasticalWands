@@ -1,9 +1,6 @@
 """
 lego_ble.py - BLE Central driver for LEGO Education devices (MicroPython / ESP32-C6)
 
-Supports connecting to multiple devices, including multiple devices that share
-the same card color and serial number (distinguished by BLE MAC address).
-
 Requires: aioble  (Tools > Manage packages > search "aioble" in Thonny)
 """
 
@@ -20,7 +17,6 @@ _LEGO_COMPANY_ID = 0x0397
 
 
 def _norm_serial(value):
-    """Normalise card serial to zero-padded 4-digit string, e.g. 26 → '0026'."""
     if value is None:
         return None
     try:
@@ -30,10 +26,6 @@ def _norm_serial(value):
 
 
 def _extract_mfr(result):
-    """
-    Return (product_id, card_color, card_serial_int) from a scan result,
-    or (None, None, None) if no LEGO manufacturer data is present.
-    """
     try:
         for company_id, data in result.manufacturer():
             if company_id != _LEGO_COMPANY_ID:
@@ -50,30 +42,20 @@ def _extract_mfr(result):
 
 
 # ---------------------------------------------------------------------------
-# Module-level scan function — finds N devices matching given criteria
-# in a SINGLE scan pass. This is the correct approach for multiple devices
-# sharing the same card, since aioble only allows one scan at a time.
+# Module-level scan
 # ---------------------------------------------------------------------------
 
 async def scan_for_devices(count, card_color=None, card_serial=None,
                             product_id=None, timeout_ms=15000):
-    """
-    Scan for `count` LEGO devices matching the given card credentials.
-    Returns a list of aioble device objects (may be shorter than count on timeout).
-
-    Devices are deduplicated by MAC address, so the same device is never
-    returned twice even if it advertises multiple times during the scan.
-    """
     norm_serial = _norm_serial(card_serial)
-    found = []        # list of aioble device objects
-    seen_addrs = set()  # MAC addresses already collected
+    found      = []
+    seen_addrs = set()
 
     desc = ""
-    if card_color is not None:
-        desc += f" card_color={card_color}"
-    if norm_serial is not None:
-        desc += f" card_serial={norm_serial}"
-    print(f"Scanning for {count} LEGO device(s){desc}…")
+    if card_color  is not None: desc += f" card_color={card_color}"
+    if norm_serial is not None: desc += f" card_serial={norm_serial}"
+    if product_id  is not None: desc += f" product_id={product_id}"
+    print(f"Scanning for {count} device(s){desc}…")
 
     try:
         async with aioble.scan(duration_ms=timeout_ms,
@@ -82,30 +64,26 @@ async def scan_for_devices(count, card_color=None, card_serial=None,
                                active=True) as scanner:
             async for result in scanner:
                 pid, adv_color, adv_serial_int = _extract_mfr(result)
-
                 if pid is None:
                     continue
-                if product_id is not None and pid != product_id:
+                if product_id  is not None and pid       != product_id:
                     continue
-                if card_color is not None and adv_color != card_color:
+                if card_color  is not None and adv_color != card_color:
                     continue
-                if norm_serial is not None:
-                    if _norm_serial(adv_serial_int) != norm_serial:
-                        continue
+                if norm_serial is not None and _norm_serial(adv_serial_int) != norm_serial:
+                    continue
 
                 addr = result.device.addr_hex()
                 if addr in seen_addrs:
-                    continue  # already have this device, keep scanning
+                    continue
 
                 seen_addrs.add(addr)
                 found.append(result.device)
-                print(f"  [{len(found)}/{count}] Found: addr={addr}  "
-                      f"product_id={pid}  "
-                      f"card_color={adv_color}  "
-                      f"card_serial={_norm_serial(adv_serial_int)}")
+                print(f"  [{len(found)}/{count}] addr={addr}  pid={pid}  "
+                      f"color={adv_color}  serial={_norm_serial(adv_serial_int)}")
 
                 if len(found) >= count:
-                    break  # got everything we need, stop early
+                    break
 
     except asyncio.TimeoutError:
         pass
@@ -113,67 +91,51 @@ async def scan_for_devices(count, card_color=None, card_serial=None,
         print(f"Scan error: {e}")
 
     if len(found) < count:
-        print(f"Warning: only found {len(found)}/{count} devices.")
-
+        print(f"  Warning: only found {len(found)}/{count} devices.")
     return found
 
 
 # ---------------------------------------------------------------------------
-# LegoDevice — one instance per physical device
+# LegoDevice
 # ---------------------------------------------------------------------------
 
 class LegoDevice:
-    """
-    Async BLE central for a single LEGO Education device.
 
-    Normal single-device use:
-        dev = LegoDevice()
-        await dev.connect(card_color=rpc.LEGO_COLOR_GREEN, card_serial='0026')
-        if not dev.connected: ...
-
-    Multi-device use (see connect_multiple below):
-        motors = await connect_multiple(2, card_color=..., card_serial=...)
-    """
-
-    def __init__(self):
+    def __init__(self, debug=False):
         self._connection  = None
         self._write_char  = None
         self._notify_char = None
         self._notify_task = None
+        self._debug       = debug
+        self._got_first_notification = asyncio.Event()
 
-        self.motor  = {}
-        self.motors = {}
-        self.sensor = {}
+        # Typed notification slots — one per notification type
+        self.motor      = {}
+        self.motors     = {}
+        self.controller = {}
+        self.color      = {}
+        self.imu        = {}
+        self.button     = {}
+        self.card       = {}
+        self.info_dev   = {}
 
     # ------------------------------------------------------------------
-    # Single-device connect (scans internally, stops at first match)
+    # connect / disconnect
     # ------------------------------------------------------------------
 
     async def connect(self, card_color=None, card_serial=None,
                       product_id=None, timeout_ms=15000):
-        devices = await scan_for_devices(
-            count=1,
-            card_color=card_color,
-            card_serial=card_serial,
-            product_id=product_id,
-            timeout_ms=timeout_ms,
-        )
+        devices = await scan_for_devices(1, card_color=card_color,
+                                         card_serial=card_serial,
+                                         product_id=product_id,
+                                         timeout_ms=timeout_ms)
         if not devices:
-            print("No matching LEGO device found.")
+            print("No matching device found.")
             return
-        await self._do_connect(devices[0])
-
-    # ------------------------------------------------------------------
-    # Connect to a pre-found device object (used by connect_multiple)
-    # ------------------------------------------------------------------
+        await self.connect_device(devices[0])
 
     async def connect_device(self, device):
-        """Connect to a specific aioble device object from a prior scan."""
         await self._do_connect(device)
-
-    # ------------------------------------------------------------------
-    # disconnect
-    # ------------------------------------------------------------------
 
     async def disconnect(self):
         if self._notify_task:
@@ -183,7 +145,6 @@ class LegoDevice:
             except asyncio.CancelledError:
                 pass
             self._notify_task = None
-
         if self._connection:
             try:
                 await self._connection.disconnect()
@@ -205,7 +166,7 @@ class LegoDevice:
         try:
             self._connection = await device.connect(timeout_ms=10000)
         except asyncio.TimeoutError:
-            print(f"Connection timed out: {device.addr_hex()}")
+            print("Connection timed out.")
             self._connection = None
             return
         except Exception as e:
@@ -214,7 +175,7 @@ class LegoDevice:
             return
 
         try:
-            service = await self._connection.service(_SERVICE_UUID)
+            service           = await self._connection.service(_SERVICE_UUID)
             self._write_char  = await service.characteristic(_WRITE_UUID)
             self._notify_char = await service.characteristic(_NOTIFY_UUID)
         except Exception as e:
@@ -223,9 +184,28 @@ class LegoDevice:
             self._connection = None
             return
 
+        # Subscribe first, then start the listener task
         await self._notify_char.subscribe(notify=True)
+
+        # Small settle delay — gives the CCCD write time to complete
+        await asyncio.sleep_ms(200)
+
+        self._got_first_notification.clear()
         self._notify_task = asyncio.create_task(self._notification_loop())
-        await self._send(rpc.device_notification_request(50))
+
+        # Send notification request, retry up to 3 times if no data arrives
+        for attempt in range(1, 4):
+            await self._send(rpc.device_notification_request(50))
+            print(f"  Notification request sent (attempt {attempt})…")
+            try:
+                await asyncio.wait_for_ms(self._got_first_notification.wait(), 2000)
+                print(f"  First notification received.")
+                break
+            except asyncio.TimeoutError:
+                print(f"  No response yet…")
+        else:
+            print(f"  Warning: no notifications after 3 attempts — device may not be streaming.")
+
         print(f"Connected to {device.addr_hex()}.")
 
     async def _send(self, msg_bytes):
@@ -243,19 +223,43 @@ class LegoDevice:
                 except Exception as e:
                     print(f"Notify error: {e}")
                     break
+
+                if self._debug:
+                    print(f"  [raw] {data.hex() if hasattr(data, 'hex') else data}")
+
                 parsed = rpc.parse_response(data)
-                if parsed and parsed.get("type") == "DeviceNotification":
+                if not parsed:
+                    continue
+
+                if parsed.get("type") == "DeviceNotification":
                     for n in parsed["notifications"]:
-                        t = n.get("type")
-                        if t == "MotorNotification":
-                            self.motors[n["motor_mask"]] = n
-                            self.motor = n
-                        elif t in ("ColorSensorNotification", "ControllerNotification",
-                                   "ImuDeviceNotification", "ButtonStateNotification",
-                                   "CardNotification", "InfoDeviceNotification"):
-                            self.sensor = n
+                        self._apply(n)
+                    # Signal that at least one notification came through
+                    self._got_first_notification.set()
+
         except asyncio.CancelledError:
             pass
+
+    def _apply(self, n):
+        t = n.get("type")
+        if self._debug:
+            print(f"  [notif] {t}: {n}")
+
+        if t == "MotorNotification":
+            self.motors[n["motor_mask"]] = n
+            self.motor = n
+        elif t == "ControllerNotification":
+            self.controller = n
+        elif t == "ColorSensorNotification":
+            self.color = n
+        elif t == "ImuDeviceNotification":
+            self.imu = n
+        elif t == "ButtonStateNotification":
+            self.button = n
+        elif t == "CardNotification":
+            self.card = n
+        elif t == "InfoDeviceNotification":
+            self.info_dev = n
 
     # ------------------------------------------------------------------
     # Commands
@@ -337,39 +341,16 @@ class LegoDevice:
 
 
 # ---------------------------------------------------------------------------
-# Convenience function: scan once, connect all concurrently
+# connect_multiple
 # ---------------------------------------------------------------------------
 
 async def connect_multiple(count, card_color=None, card_serial=None,
                             product_id=None, timeout_ms=15000):
-    """
-    Find `count` LEGO devices in a single scan pass, then connect to all
-    of them concurrently. Returns a list of LegoDevice objects.
-
-    All devices in the list are guaranteed to be connected (check .connected
-    on each one to be sure).
-
-    Example:
-        motors = await connect_multiple(2,
-                     card_color=rpc.LEGO_COLOR_GREEN,
-                     card_serial='0026',
-                     product_id=rpc.PRODUCT_GROUP_DEVICE_DOUBLE_MOTOR)
-    """
-    # Step 1: single scan pass to find all target devices
-    devices = await scan_for_devices(
-        count=count,
-        card_color=card_color,
-        card_serial=card_serial,
-        product_id=product_id,
-        timeout_ms=timeout_ms,
-    )
-
-    # Step 2: create LegoDevice instances
+    devices      = await scan_for_devices(count, card_color=card_color,
+                                           card_serial=card_serial,
+                                           product_id=product_id,
+                                           timeout_ms=timeout_ms)
     lego_devices = [LegoDevice() for _ in devices]
-
-    # Step 3: connect sequentially — aioble raises EALREADY if two
-    # connections are initiated at the same time.
     for ld, dev in zip(lego_devices, devices):
         await ld.connect_device(dev)
-
     return lego_devices

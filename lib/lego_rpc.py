@@ -1,22 +1,21 @@
 """
 lego_rpc.py - LEGO Education RPC message serialization for MicroPython (ESP32-C6)
 
-Ported from rpc_message.py. Covers motors, movement (Double Motor),
-light, sound, and all notification types.
+All type IDs taken directly from rpc_message.py — do not edit these numbers.
 """
 
 import struct
 
 # ---------------------------------------------------------------------------
-# Message type IDs
+# Message type IDs  (copied verbatim from rpc_message.py)
 # ---------------------------------------------------------------------------
-INFO_REQUEST                            = 1
-INFO_RESPONSE                           = 2
-DEVICE_NOTIFICATION_REQUEST             = 13
-DEVICE_NOTIFICATION_RESPONSE            = 14
-DEVICE_NOTIFICATION                     = 15
-LIGHT_COLOR_COMMAND                     = 50
-LIGHT_COLOR_RESULT                      = 51
+INFO_REQUEST                            = 0
+INFO_RESPONSE                           = 1
+DEVICE_NOTIFICATION_REQUEST             = 40
+DEVICE_NOTIFICATION_RESPONSE            = 41
+DEVICE_NOTIFICATION                     = 60
+LIGHT_COLOR_COMMAND                     = 110
+LIGHT_COLOR_RESULT                      = 111
 PLAY_BEEP_COMMAND                       = 112
 PLAY_BEEP_RESULT                        = 113
 STOP_SOUND_COMMAND                      = 114
@@ -59,6 +58,10 @@ MOVEMENT_SET_ACCELERATION_COMMAND       = 174
 MOVEMENT_SET_ACCELERATION_RESULT        = 175
 MOVEMENT_SET_TURN_STEERING_COMMAND      = 176
 MOVEMENT_SET_TURN_STEERING_RESULT       = 177
+IMU_SET_YAW_FACE_COMMAND                = 190
+IMU_SET_YAW_FACE_RESULT                 = 191
+IMU_RESET_YAW_AXIS_COMMAND              = 192
+IMU_RESET_YAW_AXIS_RESULT               = 193
 
 # Notification sub-type IDs (inside DeviceNotification payload)
 INFO_DEVICE_NOTIFICATION    = 0
@@ -71,7 +74,7 @@ CONTROLLER_NOTIFICATION     = 15
 IMU_GESTURE_NOTIFICATION    = 16
 
 # ---------------------------------------------------------------------------
-# Enum constants
+# Enum constants  (unchanged — these were already correct)
 # ---------------------------------------------------------------------------
 MOTOR_BITS_LEFT  = 1
 MOTOR_BITS_RIGHT = 2
@@ -100,7 +103,6 @@ MOVEMENT_MOVE_DIRECTION_BACKWARD = 1
 MOVEMENT_TURN_DIRECTION_LEFT  = 2
 MOVEMENT_TURN_DIRECTION_RIGHT = 3
 
-# Firmware color values (used for card scanning and light commands)
 LEGO_COLOR_NONE      = -1
 LEGO_COLOR_BLACK     = 0
 LEGO_COLOR_MAGENTA   = 1
@@ -191,24 +193,19 @@ def movement_move(direction=MOVEMENT_DIRECTION_FORWARD):
     return _msg(MOVEMENT_MOVE_COMMAND, "<B", direction)
 
 def movement_move_for_time(time_ms, direction=MOVEMENT_DIRECTION_FORWARD):
-    """Format: <LB — uint32 time_ms, uint8 direction"""
     return _msg(MOVEMENT_MOVE_FOR_TIME_COMMAND, "<LB", int(time_ms), direction)
 
 def movement_move_for_degrees(degrees, direction=MOVEMENT_MOVE_DIRECTION_FORWARD):
-    """Format: <lB — int32 degrees, uint8 direction"""
     return _msg(MOVEMENT_MOVE_FOR_DEGREES_COMMAND, "<lB", int(degrees), direction)
 
 def movement_move_tank(speed_left, speed_right):
-    """Format: <bb — int8 left, int8 right"""
     return _msg(MOVEMENT_MOVE_TANK_COMMAND, "<bb", int(speed_left), int(speed_right))
 
 def movement_move_tank_for_degrees(degrees, speed_left, speed_right):
-    """Format: <lbb"""
     return _msg(MOVEMENT_MOVE_TANK_FOR_DEGREES_COMMAND, "<lbb",
                 int(degrees), int(speed_left), int(speed_right))
 
 def movement_turn_for_degrees(degrees, direction=MOVEMENT_TURN_DIRECTION_LEFT):
-    """Format: <lB — int32 degrees, uint8 direction"""
     return _msg(MOVEMENT_TURN_FOR_DEGREES_COMMAND, "<lB", int(degrees), direction)
 
 def movement_stop():
@@ -260,7 +257,6 @@ def parse_response(data):
                 "notifications": _parse_sub_notifications(device_data, length),
             }
 
-        # All other results carry just a status byte
         else:
             status = payload[0] if payload else -1
             return {"type": type_id, "status": status}
@@ -271,7 +267,7 @@ def parse_response(data):
 
 def _parse_sub_notifications(data, total_length):
     notifications = []
-    offset = 0
+    offset    = 0
     remaining = total_length
 
     _sizes = {
@@ -287,7 +283,7 @@ def _parse_sub_notifications(data, total_length):
 
     while remaining > 0 and offset < len(data):
         sub_type = data[offset]
-        offset += 1
+        offset   += 1
         remaining -= 1
         sz = _sizes.get(sub_type)
         if sz is None or remaining < sz:
@@ -353,7 +349,7 @@ def _parse_sub_notifications(data, total_length):
         except Exception as e:
             notifications.append({"type": "SubParseError", "sub_type": sub_type, "error": str(e)})
 
-        offset += sz
+        offset    += sz
         remaining -= sz
 
     return notifications
