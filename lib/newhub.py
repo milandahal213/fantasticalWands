@@ -27,7 +27,7 @@ class Hub:
              3: (self.taghub,      3),
              4: (self.btnstate,    1),
             10: (self.motor,      12),   # 12 bytes: Double Motor layout
-            12: (self.color,      18),
+            12: (self.color,      12),
             13: (self.joystick,    6),
             14: (self.imugest,     1),
             15: (self.controller,  6),   # Controller joystick: leftStep, rightStep, leftAngle(i16), rightAngle(i16)
@@ -162,12 +162,15 @@ class Hub:
         return {}
 
     def color(self, data):
+        # Color Sensor sends 12 bytes (no hue/saturation/value in current firmware)
         return {
-            'color':      data[0], 'reflection': data[1],
-            'rawRed':   self.u16(data[2:4]),   'rawGreen': self.u16(data[4:6]),
-            'rawBlue':  self.u16(data[6:8]),   'clear':    self.u16(data[8:10]),
-            'infrared': self.u16(data[10:12]), 'hue':      self.u16(data[12:14]),
-            'saturation': self.u16(data[14:16]), 'value':  self.u16(data[16:]),
+            'color':      data[0],
+            'reflection': data[1],
+            'rawRed':     self.u16(data[2:4]),
+            'rawGreen':   self.u16(data[4:6]),
+            'rawBlue':    self.u16(data[6:8]),
+            'clear':      self.u16(data[8:10]),
+            'infrared':   self.u16(data[10:12]),
         }
 
     def joystick(self, data):
