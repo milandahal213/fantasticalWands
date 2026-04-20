@@ -10,7 +10,7 @@ def on_data(raw):
     # Print the raw bytes as a hex list so we can see the exact packet structure
     print([hex(b) for b in raw])
 
-h.callback(on_data)
+h.set_callback(on_data)
 
 print("Connecting to '{}' …".format(DEVICE_NAME))
 h.connect(Name=DEVICE_NAME)

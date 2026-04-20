@@ -15,7 +15,7 @@ def on_data(raw):
     except Exception as e:
         print("on_data ERR:", e)
 
-h.callback(on_data)
+h.set_callback(on_data)
 
 print("Connecting to '{}' ...".format(DEVICE_NAME))
 h.connect(Name=DEVICE_NAME)
