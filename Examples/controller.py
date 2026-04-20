@@ -13,13 +13,13 @@ def on_data(raw):
     if isinstance(result, dict):
         telemetry.update(result)
 
-h.callback(on_data)
+h.set_callback(on_data)
 
 print("Connecting to '{}' ...".format(DEVICE_NAME))
 h.connect(Name=DEVICE_NAME)
 print("Connected! Move the joysticks.")
 
-h.feed(updateTime=50)
+h.feed(updateTime=200)
 
 while True:
     left  = telemetry.get('leftAngle',  '?')
