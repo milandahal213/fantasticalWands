@@ -35,6 +35,32 @@ _IRQ_SET_SECRET                  = const(30)
 
 MTU_SIZE = 150
 
+LEGO_COMPANY_ID = 0x0397  # LEGO company identifier in BLE manufacturer data
+
+
+def _parse_lego_mfg(adv_data):
+    """Parse BLE advertising data and return LEGO card info if present.
+    Returns (product_id, card_color, card_serial) or (None, None, None)."""
+    i = 0
+    while i < len(adv_data):
+        length = adv_data[i]
+        if length == 0 or i + length >= len(adv_data):
+            break
+        ad_type = adv_data[i + 1]
+        if ad_type == 0xFF and length >= 8:
+            # Manufacturer-specific: [len][0xFF][cid_lo][cid_hi][payload...]
+            cid = adv_data[i + 2] | (adv_data[i + 3] << 8)
+            if cid == LEGO_COMPANY_ID:
+                payload = adv_data[i + 4 : i + 1 + length]
+                # [product_group, product_device, card_color, serial_lo, serial_hi]
+                if len(payload) >= 5:
+                    product_id  = (payload[0] << 8) | payload[1]
+                    card_color  = payload[2]
+                    card_serial = payload[3] | (payload[4] << 8)
+                    return product_id, card_color, card_serial
+        i += length + 1
+    return None, None, None
+
 
 def _new_slot():
     return {
@@ -62,6 +88,9 @@ class BLEDevice:
         self._scan_slot = None
         self._scan_name = None
         self._scan_mfg  = None
+        self._scan_card_color  = None
+        self._scan_card_serial = None
+        self._scan_product_id  = None
         self._scan_seen = set()
         self._scan_found= False
 
@@ -77,24 +106,52 @@ class BLEDevice:
             if self._scan_found:
                 return
             addr_str = ':'.join('%02X' % b for b in addr)
-            name = mfg = ''
-            if adv_type == 4:
-                name = self._decode(adv_data) or ''
-            if addr_str not in self._scan_seen:
-                self._scan_seen.add(addr_str)
-                mfg  = self._decode(adv_data) or ''
-                name = self._decode(adv_data) or ''
-                if (self._scan_mfg and mfg == self._scan_mfg) or \
-                   (name and self._scan_name and self._scan_name in name):
-                    self._scan_found = True
-            else:
-                if name and self._scan_name and self._scan_name in name:
-                    self._scan_found = True
+            if addr_str in self._scan_seen:
+                return
+            self._scan_seen.add(addr_str)
 
-            if self._scan_found:
-                print("Found '{}' for slot '{}'".format(name or mfg, self._scan_slot))
-                self.ble.gap_scan(None)
-                self.ble.gap_connect(addr_type, addr)
+            name = self._decode(adv_data) or ''
+            product_id, card_color, card_serial = _parse_lego_mfg(adv_data)
+
+            # Decide whether this advertisement matches our filters
+            match = False
+
+            # Name filter
+            if self._scan_name:
+                if name and self._scan_name in name:
+                    match = True
+                else:
+                    return  # name requested but doesn't match
+
+            # Product ID filter (e.g. 513 = Double Motor)
+            if self._scan_product_id is not None:
+                if product_id != self._scan_product_id:
+                    return
+                match = True
+
+            # Card filters (both required together)
+            if self._scan_card_color is not None or self._scan_card_serial is not None:
+                if card_color is None:
+                    return  # not a LEGO device
+                if (self._scan_card_color is not None and
+                        card_color != self._scan_card_color):
+                    return
+                if (self._scan_card_serial is not None and
+                        card_serial != self._scan_card_serial):
+                    return
+                match = True
+
+            if not match:
+                return
+
+            self._scan_found = True
+            print("Found '{}' color={} serial={:04d} for slot '{}'".format(
+                name or '?',
+                card_color if card_color is not None else '?',
+                card_serial if card_serial is not None else 0,
+                self._scan_slot))
+            self.ble.gap_scan(None)
+            self.ble.gap_connect(addr_type, addr)
 
         elif event == _IRQ_PERIPHERAL_CONNECT:
             conn_handle, addr_type, addr = data
@@ -196,18 +253,34 @@ class BLEDevice:
             print("_setup_notify error:", e)
 
     # ── public API ────────────────────────────────────────────────────────────
-    def scan(self, slot, name=None, duration=5000, manufacture=None):
-        """Scan and connect to a device, assigning it to the named slot."""
+    def scan(self, slot, name=None, duration=5000, manufacture=None,
+             card_color=None, card_serial=None, product_id=None):
+        """Scan and connect to a device, assigning it to the named slot.
+
+        Filters (any combination):
+            name         – substring match on BLE device name
+            product_id   – 512=Single Motor, 513=Double Motor,
+                           514=Color Sensor, 515=Controller
+            card_color   – int 1..10 (LEGO Connection Card color)
+            card_serial  – int 0..9999 (LEGO Connection Card serial number)
+        """
         # Preserve callback if set_callback() was already called for this slot
         existing_cb = self._slots.get(slot, {}).get('callback')
         self._slots[slot] = _new_slot()
         self._slots[slot]['callback'] = existing_cb
-        self._scan_slot  = slot
-        self._scan_name  = name
-        self._scan_mfg   = manufacture
-        self._scan_found = False
-        self._scan_seen  = set()
-        print("Scanning for '{}' → slot '{}'...".format(name, slot))
+        self._scan_slot        = slot
+        self._scan_name        = name
+        self._scan_mfg         = manufacture
+        self._scan_card_color  = card_color
+        self._scan_card_serial = card_serial
+        self._scan_product_id  = product_id
+        self._scan_found       = False
+        self._scan_seen        = set()
+        desc = name or ''
+        if product_id  is not None: desc += ' product_id=' + str(product_id)
+        if card_color  is not None: desc += ' color=' + str(card_color)
+        if card_serial is not None: desc += ' serial={:04d}'.format(card_serial)
+        print("Scanning for {} → slot '{}'...".format(desc.strip(), slot))
         self.ble.gap_scan(duration, 30000, 30000, True)
 
     def is_connected(self, slot):

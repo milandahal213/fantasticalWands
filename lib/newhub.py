@@ -4,6 +4,47 @@ from bledevice import BLEDevice
 import struct
 import time
 
+# LEGO Connection Card colors (firmware numbering)
+CARD_BLACK     = 0
+CARD_MAGENTA   = 1
+CARD_PURPLE    = 2
+CARD_BLUE      = 3
+CARD_AZURE     = 4
+CARD_TURQUOISE = 5
+CARD_GREEN     = 6
+CARD_YELLOW    = 7
+CARD_ORANGE    = 8
+CARD_RED       = 9
+CARD_WHITE     = 10
+
+# LEGO product IDs (product_group << 8 | product_device)
+PRODUCT_SINGLE_MOTOR = 512
+PRODUCT_DOUBLE_MOTOR = 513
+PRODUCT_COLOR_SENSOR = 514
+PRODUCT_CONTROLLER   = 515
+
+_CARD_NAMES = {
+    0:'BLACK', 1:'MAGENTA', 2:'PURPLE', 3:'BLUE', 4:'AZURE',
+    5:'TURQUOISE', 6:'GREEN', 7:'YELLOW', 8:'ORANGE', 9:'RED', 10:'WHITE',
+}
+_CARD_COLOR_BY_NAME = {v: k for k, v in _CARD_NAMES.items()}
+
+
+def _resolve_card_color(value):
+    """Accept int 0..10 or a color name string (case-insensitive)."""
+    if value is None: return None
+    if isinstance(value, int): return value
+    name = str(value).upper().replace('CARD_', '').replace('LEGO_COLOR_', '')
+    if name in _CARD_COLOR_BY_NAME:
+        return _CARD_COLOR_BY_NAME[name]
+    raise ValueError("Unknown card color: {}".format(value))
+
+
+def _resolve_card_serial(value):
+    """Accept int or numeric string like '0026'."""
+    if value is None: return None
+    return int(str(value).strip())
+
 _shared_ble = None   # module-level shared BLEDevice instance
 
 def get_shared_ble():
@@ -48,8 +89,27 @@ class Hub:
     def set_callback(self, cb):
         self.myble.set_callback(self.slot, cb)
 
-    def connect(self, Name='MOT'):
-        self.myble.scan(slot=self.slot, name=Name)
+    # alias for backwards compatibility
+    callback = set_callback
+
+    def connect(self, Name=None, card_color=None, card_serial=None, product_id=None):
+        """Scan and connect to a LEGO device.
+
+        Provide one or more filters:
+            Name='Double Motor'         — match by advertised name
+            product_id=PRODUCT_*        — match by device type (e.g. PRODUCT_CONTROLLER)
+            card_color=CARD_GREEN       — match by Connection Card color
+            card_serial=26              — match by Connection Card serial
+
+        Examples:
+            h.connect(product_id=PRODUCT_CONTROLLER)
+            h.connect(Name='Controller')
+            h.connect(card_color=CARD_GREEN, card_serial=26)
+        """
+        color  = _resolve_card_color(card_color)
+        serial = _resolve_card_serial(card_serial)
+        self.myble.scan(slot=self.slot, name=Name, product_id=product_id,
+                        card_color=color, card_serial=serial)
         while True:
             if self.myble.is_connected(self.slot):
                 self.write([0x00])
