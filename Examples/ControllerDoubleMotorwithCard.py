@@ -1,7 +1,7 @@
 # Controller drives Double Motor — tank drive (left motor inverted)
 # Devices are found by product_id instead of name.
 from bledevice import BLEDevice
-from newhub import (Hub, PRODUCT_CONTROLLER, PRODUCT_DOUBLE_MOTOR)
+from newhub import (Hub, CONTROLLER, DOUBLE_MOTOR)
 import time
 
 # --- tuning ---
@@ -40,10 +40,10 @@ ctrl  = make_hub('ctrl')
 motor = make_hub('motor')
 
 print("Connecting to Controller...")
-ctrl.connect(product_id=PRODUCT_CONTROLLER); ctrl.feed(200)
+ctrl.connect(product_id=CONTROLLER); ctrl.feed(200)
 
 print("Connecting to Double Motor...")
-motor.connect(product_id=PRODUCT_DOUBLE_MOTOR); motor.feed(200)
+motor.connect(product_id=DOUBLE_MOTOR); motor.feed(200)
 
 time.sleep(1)
 motor.motor_speed(MOTOR_BOTH, 0)

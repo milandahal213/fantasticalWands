@@ -1,7 +1,5 @@
-from newhub import Hub
+from newhub import Hub, SINGLE_MOTOR
 import time
-
-DEVICE_NAME = 'Single Motor'
 
 h = Hub()
 h.data = {}
@@ -14,13 +12,11 @@ def on_data(raw):
             h.data.update(result)
     except Exception as e:
         print("ERR:", e)
-
 h.set_callback(on_data)
 
-print("Connecting to '{}' ...".format(DEVICE_NAME))
-h.connect(Name=DEVICE_NAME)
+print("Connecting to Single Motor...")
+h.connect(product_id=SINGLE_MOTOR)
 print("Connected!")
-
 h.feed(updateTime=200)
 
 while True:

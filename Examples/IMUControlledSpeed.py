@@ -2,7 +2,7 @@
 # Pitch (tilt forward/back) drives the LEFT motor
 # Roll  (tilt left/right)   drives the RIGHT motor
 from bledevice import BLEDevice
-from newhub import Hub
+from newhub import Hub, DOUBLE_MOTOR
 import time
 
 # --- tuning ---
@@ -36,11 +36,10 @@ def on_data(raw):
             h.data.update(result)
     except Exception as e:
         print("parse err:", e)
-
 h.set_callback(on_data)
 
 print("Connecting to Double Motor...")
-h.connect(Name='Double Motor')
+h.connect(product_id=DOUBLE_MOTOR)
 h.feed(updateTime=200)
 print("Connected.")
 

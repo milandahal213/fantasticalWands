@@ -1,16 +1,34 @@
-# ULTIMATE TEST — 4 devices simultaneously:
-#   Controller  (input)  → drives Double Motor (tank drive, left motor inverted)
-#   Color Sensor (input) → drives Single Motor (by brightness)
+# ULTIMATE TEST — 4 devices simultaneously, configurable device selection.
+#
+# You can find each device by product_id alone (works when you have one of
+# each type), OR also filter by Connection Card color + serial (needed
+# when you have multiple of the same type).
+#
+# Leave the card fields as None to skip card filtering.
 from bledevice import BLEDevice
-from newhub import Hub
+from newhub import (Hub,
+    CONTROLLER, DOUBLE_MOTOR,
+    SINGLE_MOTOR, COLOR_SENSOR,
+    CARD_GREEN, CARD_RED, CARD_BLUE, CARD_YELLOW,
+    CARD_PURPLE, CARD_MAGENTA, CARD_ORANGE, CARD_AZURE)
 import time
 
-# --- tuning ---
-MAX_ANGLE      = 100   # controller angle for full motor speed
-MAX_BRIGHTNESS = 100   # reflection value for full single-motor speed
-MIN_SPEED      = 5     # deadband
+# ── Device selection ───────────────────────────────────────────────
+# Each entry: (product_id, card_color or None, card_serial or None)
+# Set card_color/card_serial to None to match by product_id alone.
+CTRL_SPEC   = (CONTROLLER,   None, None)
+DMOTOR_SPEC = (DOUBLE_MOTOR, None, None)
+COLOR_SPEC  = (COLOR_SENSOR, None, None)
+SMOTOR_SPEC = (SINGLE_MOTOR, None, None)
+# Example using cards:
+# CTRL_SPEC = (CONTROLLER, CARD_GREEN, 26)
+# ───────────────────────────────────────────────────────────────────
+
+# Tuning
+MAX_ANGLE      = 100
+MAX_BRIGHTNESS = 100
+MIN_SPEED      = 5
 UPDATE_MS      = 100
-# --------------
 
 MOTOR_LEFT  = 1
 MOTOR_RIGHT = 2
@@ -43,28 +61,26 @@ def make_hub(slot_name):
     h.set_callback(cb)
     return h
 
+def connect_spec(hub, spec, label):
+    pid, color, serial = spec
+    print("Connecting {}...".format(label))
+    hub.connect(product_id=pid, card_color=color, card_serial=serial)
+    hub.feed(200)
+
 ctrl   = make_hub('ctrl')
 dmotor = make_hub('dmotor')
 color  = make_hub('color')
 smotor = make_hub('smotor')
 
-# ─── Connect all four, one at a time ────────────────────
-print("Connecting Controller...")
-ctrl.connect(Name='Controller');   ctrl.feed(200)
-
-print("Connecting Double Motor...")
-dmotor.connect(Name='Double Motor'); dmotor.feed(200)
-
-print("Connecting Color Sensor...")
-color.connect(Name='Color Sensor');  color.feed(200)
-
-print("Connecting Single Motor...")
-smotor.connect(Name='Single Motor'); smotor.feed(200)
+connect_spec(ctrl,   CTRL_SPEC,   'Controller')
+connect_spec(dmotor, DMOTOR_SPEC, 'Double Motor')
+connect_spec(color,  COLOR_SPEC,  'Color Sensor')
+connect_spec(smotor, SMOTOR_SPEC, 'Single Motor')
 
 print("\n*** All 4 devices connected! ***\n")
 time.sleep(1)
 
-# ─── Arm motors ─────────────────────────────────────────
+# Arm motors
 dmotor.motor_speed(MOTOR_BOTH, 0)
 dmotor.motor_run(MOTOR_BOTH, 0)
 smotor.motor_speed(PORT_SINGLE, 0)
@@ -72,7 +88,7 @@ smotor.motor_run(PORT_SINGLE, 0)
 print("Motors armed. Drive with controller; shine light on color sensor.")
 print("Ctrl+C to stop.\n")
 
-# ─── Control loop ───────────────────────────────────────
+# Control loop
 last_l = last_r = last_s = 0
 try:
     while True:
@@ -80,7 +96,7 @@ try:
         ra = ctrl.data.get('rightAngle')
         br = color.data.get('reflection')
 
-        lspeed = scale(la, MAX_ANGLE, invert=True)   # tank: invert left
+        lspeed = scale(la, MAX_ANGLE, invert=True)
         rspeed = scale(ra, MAX_ANGLE)
         sspeed = scale(br, MAX_BRIGHTNESS)
 

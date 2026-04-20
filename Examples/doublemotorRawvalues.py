@@ -1,4 +1,5 @@
-from newhub import Hub
+from bledevice import BLEDevice
+from newhub import Hub, DOUBLE_MOTOR
 import time
 
 DEVICE_NAME = 'Double Motor'
@@ -12,8 +13,7 @@ def on_data(raw):
 
 h.set_callback(on_data)
 
-print("Connecting to '{}' …".format(DEVICE_NAME))
-h.connect(Name=DEVICE_NAME)
+h.connect(product_id=DOUBLE_MOTOR)
 print("Connected! Waiting for raw packets…")
 
 h.feed(updateTime=200)   # slower feed so output is readable

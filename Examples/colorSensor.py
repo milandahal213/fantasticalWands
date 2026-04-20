@@ -1,7 +1,5 @@
-from newhub import Hub
+from newhub import Hub, COLOR_SENSOR
 import time
-
-DEVICE_NAME = 'Color Sensor'
 
 h = Hub()
 h.data = {}
@@ -17,10 +15,9 @@ def on_data(raw):
 
 h.set_callback(on_data)
 
-print("Connecting to '{}' ...".format(DEVICE_NAME))
-h.connect(Name=DEVICE_NAME)
+print("Connecting to Color Sensor...")
+h.connect(product_id=COLOR_SENSOR)
 print("Connected!")
-
 h.feed(updateTime=200)
 
 while True:

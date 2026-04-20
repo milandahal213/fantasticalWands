@@ -1,7 +1,7 @@
-from newhub import Hub
-import time
+from bledevice import BLEDevice
+from newhub import Hub, DOUBLE_MOTOR
 
-DEVICE_NAME = 'Double Motor'
+import time
 
 h = Hub()
 h.data = {}   # store telemetry on hub object to avoid closure scoping issues
@@ -17,8 +17,7 @@ def on_data(raw):
 
 h.set_callback(on_data)
 
-print("Connecting to '{}' ...".format(DEVICE_NAME))
-h.connect(Name=DEVICE_NAME)
+h.connect(product_id=DOUBLE_MOTOR)
 print("Connected!")
 
 h.feed(updateTime=200)
