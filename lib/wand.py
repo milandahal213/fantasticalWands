@@ -50,6 +50,24 @@ CARD_COLOR_NAMES = {
     5:'TURQUOISE', 6:'GREEN', 7:'YELLOW', 8:'ORANGE', 9:'RED', 10:'WHITE',
 }
 
+# The byte stored on the NFC card is NOT the same as the LEGO app color ID.
+# This table remaps the raw byte we read off page 5 → the app-aligned color ID.
+# Populated from observed cards; unknown bytes fall through unchanged.
+_RAW_TO_APP_COLOR = {
+    0x01: 8,   # MAGENTA
+    0x02: 6,   # PURPLE
+    0x04: 2,   # YELLOW
+    0x07: 2,   # YELLOW (multi variant)
+    0x08: 9,
+    0x09: 1,   # RED
+}
+
+
+def _raw_to_app_color(raw_byte):
+    """Translate the raw color byte from the card → LEGO app color ID.
+    Unknown bytes pass through unchanged (best-effort)."""
+    return _RAW_TO_APP_COLOR.get(raw_byte, raw_byte)
+
 # RGB (0..255) values for displaying each card color on the NeoPixels.
 CARD_RGB = {
     CARD_BLACK    : (  0,   0,   0),
@@ -152,6 +170,64 @@ class Wand:
             self.pixels_clear()
             time.sleep_ms(off_ms)
 
+    def pixels_center_only(self, rgb=(2, 2, 2)):
+        """Light ONLY the center pixel (index 12). Used to show 'card detected,
+        connecting…'. Uses the raw RGB you pass (no brightness scaling)."""
+        for i in range(PIXEL_N):
+            self.np[i] = (0, 0, 0)
+        self.np[12] = rgb
+        self.np.write()
+
+    # A very-dim palette for the post-connection "this is the card we used"
+    # indicator. All channels are <= 2 so the grid stays unobtrusive.
+    _FAINT_CARD_RGB = {
+        CARD_BLACK    : (0, 0, 0),
+        CARD_MAGENTA  : (2, 0, 1),
+        CARD_PURPLE   : (1, 0, 2),
+        CARD_BLUE     : (0, 1, 2),
+        CARD_AZURE    : (1, 2, 2),
+        CARD_TURQUOISE: (0, 2, 1),
+        CARD_GREEN    : (0, 2, 0),
+        CARD_YELLOW   : (2, 2, 0),
+        CARD_ORANGE   : (2, 1, 0),
+        CARD_RED      : (2, 0, 0),
+        CARD_WHITE    : (2, 2, 2),
+    }
+
+    def pixels_card_faint(self, color_id):
+        """Fill grid with a very faint (<= 2 per channel) version of the
+        given card color. Used as a persistent 'connected to <color>'
+        indicator that won't be distracting."""
+        rgb = self._FAINT_CARD_RGB.get(color_id, (1, 1, 1))
+        for i in range(PIXEL_N):
+            self.np[i] = rgb
+        self.np.write()
+
+    # Pixels used for the loading spinner, walked clockwise.
+    # Inner ring of the 5x5 grid (3x3 minus center).
+    _SPINNER_RING = (6, 7, 8, 13, 18, 17, 16, 11)
+
+    def pixels_spinner(self, rgb=(4, 4, 4), step_ms=50, trail=6):
+        """One frame of a 'comet' loading spinner: bright head with a
+        linearly-fading trail, walking clockwise around the inner ring.
+
+        Call repeatedly in a loop. rgb is the head color (raw, no scaling).
+        Defaults: fast (50ms/step) with a long 6-pixel trail — matches
+        demo animation #1.
+        """
+        n = len(self._SPINNER_RING)
+        head = (time.ticks_ms() // step_ms) % n
+
+        for i in range(PIXEL_N):
+            self.np[i] = (0, 0, 0)
+        for t in range(trail + 1):
+            idx = self._SPINNER_RING[(head - t) % n]
+            s = (trail - t) / trail if trail else 1.0
+            self.np[idx] = (int(rgb[0] * s),
+                            int(rgb[1] * s),
+                            int(rgb[2] * s))
+        self.np.write()
+
     # ── Button / buzzer ─────────────────────────────────
     def button_pressed(self):
         return self.button.value() == 0
@@ -161,6 +237,15 @@ class Wand:
         self._buzz.duty(512)
         time.sleep_ms(duration_ms)
         self._buzz.duty(0)
+
+    def buzzer_silent(self):
+        self._buzz.duty(0)
+
+    def play_connect_jingle(self):
+        """'tidi-tik-tiiik' — short pulse, short pulse, long high note."""
+        self.beep(1200,  60); time.sleep_ms(40)
+        self.beep(1600,  60); time.sleep_ms(40)
+        self.beep(2200, 180)
 
     # ── PN532 low level ─────────────────────────────────
     def _wait_ready(self, timeout=1000):
@@ -231,15 +316,17 @@ class Wand:
     def read_card(self, timeout_ms=None, animate=True):
         """Wait for a LEGO Connection Card. Returns (color, serial) or None on timeout.
 
-        animate=True shows a breathing 'tap card' prompt and flashes the
-        card color on success.
+        animate=True plays the spinner while waiting, then lights the center
+        pixel white to indicate 'card detected, now connecting…'. The caller
+        should call pixels_card_faint() and play_connect_jingle() once BLE
+        connection is actually established.
         """
         if not self._nfc_ready:
             raise RuntimeError("NFC not initialised")
         start = time.ticks_ms()
         while True:
             if animate:
-                self.pixels_card_prompt()
+                self.pixels_spinner()
             if timeout_ms is not None and \
                     time.ticks_diff(time.ticks_ms(), start) > timeout_ms:
                 if animate: self.pixels_clear()
@@ -247,11 +334,13 @@ class Wand:
             if self._detect_tag():
                 try:
                     page = self._read_page(5)
-                    color  = page[1]
+                    raw_color = page[1]
+                    color  = _raw_to_app_color(raw_color)
                     serial = (page[2] << 8) | page[3]
                     if animate:
-                        self.pixels_flash_card(color)
-                        self.pixels_fill_card(color)
+                        # Card detected — show center pixel to indicate
+                        # "connecting…". Caller takes over once BLE is up.
+                        self.pixels_center_only((2, 2, 2))
                     return color, serial
                 except RuntimeError:
                     pass
