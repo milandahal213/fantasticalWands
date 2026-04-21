@@ -127,6 +127,10 @@ class Wand:
             except Exception as e:
                 print("NFC init failed:", e)
 
+        # Boot indicator: faint white center square means 'wand ready,
+        # waiting for card'.
+        self.pixels_center_square((4, 4, 4))
+
     # ── NeoPixel helpers ────────────────────────────────
     def pixels_clear(self):
         for i in range(PIXEL_N):
@@ -172,26 +176,33 @@ class Wand:
 
     def pixels_center_only(self, rgb=(2, 2, 2)):
         """Light ONLY the center pixel (index 12). Used to show 'card detected,
-        connecting…'. Uses the raw RGB you pass (no brightness scaling)."""
-        for i in range(PIXEL_N):
+        connecting…'. Preserves top/bottom status rows."""
+        for i in range(5, 20):
             self.np[i] = (0, 0, 0)
         self.np[12] = rgb
-        self.np.write()
+        self.refresh_status()
 
-    # A very-dim palette for the post-connection "this is the card we used"
-    # indicator. All channels are <= 2 so the grid stays unobtrusive.
+    def pixels_middle_clear(self):
+        """Clear only the middle 15 pixels (rows 2-4). Preserves status rows.
+        Call this after the BLE connection is made to stop the animation."""
+        for i in range(5, 20):
+            self.np[i] = (0, 0, 0)
+        self.refresh_status()
+
+    # A dim palette for displaying a card color on the center square.
+    # Small values keep it gentle on the eyes but visible.
     _FAINT_CARD_RGB = {
         CARD_BLACK    : (0, 0, 0),
-        CARD_MAGENTA  : (2, 0, 1),
-        CARD_PURPLE   : (1, 0, 2),
-        CARD_BLUE     : (0, 1, 2),
-        CARD_AZURE    : (1, 2, 2),
-        CARD_TURQUOISE: (0, 2, 1),
-        CARD_GREEN    : (0, 2, 0),
-        CARD_YELLOW   : (2, 2, 0),
-        CARD_ORANGE   : (2, 1, 0),
-        CARD_RED      : (2, 0, 0),
-        CARD_WHITE    : (2, 2, 2),
+        CARD_MAGENTA  : (10,  3,  6),
+        CARD_PURPLE   : ( 5,  2, 10),
+        CARD_BLUE     : ( 0,  4, 10),
+        CARD_AZURE    : ( 4,  8, 10),
+        CARD_TURQUOISE: ( 0, 10,  5),
+        CARD_GREEN    : ( 3, 10,  2),
+        CARD_YELLOW   : (10, 10,  0),
+        CARD_ORANGE   : (10,  4,  0),
+        CARD_RED      : (10,  0,  0),
+        CARD_WHITE    : ( 8,  8,  8),
     }
 
     def pixels_card_faint(self, color_id):
@@ -203,30 +214,94 @@ class Wand:
             self.np[i] = rgb
         self.np.write()
 
+    # ══════════════════════════════════════════════════════
+    #   Status panel
+    # ══════════════════════════════════════════════════════
+    #
+    # Top row (pixels 0..4)  — one pixel per LEGO device type:
+    #     0 = Color Sensor   (pink)
+    #     1 = Controller     (pink)
+    #     2 = Single Motor   (green)
+    #     3 = Double Motor   (green)
+    #     4 = reserved
+    #   Pixel blinks while "connecting", steady when "connected", off when idle.
+    #
+    # Bottom row (pixels 20..24) — displays the color of the last-tapped card.
+    #
+    # Middle rows (pixels 5..19) are free for the spinner / card-read animation.
+
+    # Device slot bookkeeping. Keys: 'color', 'ctrl', 'smotor', 'dmotor'.
+    _DEVICE_PIXEL = {'color': 0, 'ctrl': 1, 'smotor': 2, 'dmotor': 3}
+    _DEVICE_RGB   = {'color': (6, 0, 3), 'ctrl':   (6, 0, 3),   # pink
+                     'smotor':(0, 6, 0), 'dmotor': (0, 6, 0)}   # green
+
+    # 'idle' | 'connecting' | 'connected'
+    _device_state = None  # dict: device_key -> state, created on first use
+    _card_row_rgb = None  # RGB tuple shown on the bottom row
+
+    def _ensure_state(self):
+        if self._device_state is None:
+            self._device_state = {k: 'idle' for k in self._DEVICE_PIXEL}
+
+    def set_device_state(self, device, state):
+        """Set the status for one device strip pixel.
+        device: 'color' | 'ctrl' | 'smotor' | 'dmotor'
+        state:  'idle' | 'connecting' | 'connected'
+        Call refresh_status() after to redraw."""
+        self._ensure_state()
+        if device not in self._DEVICE_PIXEL:
+            raise ValueError("Unknown device: " + str(device))
+        if state not in ('idle', 'connecting', 'connected'):
+            raise ValueError("Unknown state: " + str(state))
+        self._device_state[device] = state
+
+    def set_card_row(self, color_id):
+        """Paint the bottom row (pixels 20..24) with a faint version of the
+        given LEGO card color. Call refresh_status() after to redraw.
+        Pass None to clear it."""
+        if color_id is None:
+            self._card_row_rgb = None
+        else:
+            self._card_row_rgb = self._FAINT_CARD_RGB.get(color_id, (1, 1, 1))
+
+    def refresh_status(self):
+        """Redraw the top row (device states) — no blinking, just off/on.
+        Preserves the middle and bottom rows."""
+        self._ensure_state()
+
+        for device, pixel in self._DEVICE_PIXEL.items():
+            st = self._device_state.get(device, 'idle')
+            if st == 'connected':
+                self.np[pixel] = self._DEVICE_RGB[device]
+            else:
+                # idle or connecting -> off (only show on successful connect)
+                self.np[pixel] = (0, 0, 0)
+        # Pixel 4 is reserved/off
+        self.np[4] = (0, 0, 0)
+
+        self.np.write()
+
     # Pixels used for the loading spinner, walked clockwise.
     # Inner ring of the 5x5 grid (3x3 minus center).
     _SPINNER_RING = (6, 7, 8, 13, 18, 17, 16, 11)
 
-    def pixels_spinner(self, rgb=(4, 4, 4), step_ms=50, trail=6):
-        """One frame of a 'comet' loading spinner: bright head with a
-        linearly-fading trail, walking clockwise around the inner ring.
+    # Middle 3x3 square of the 5x5 grid (inner 3x3 block).
+    _CENTER_SQUARE = (6, 7, 8, 11, 12, 13, 16, 17, 18)
 
-        Call repeatedly in a loop. rgb is the head color (raw, no scaling).
-        Defaults: fast (50ms/step) with a long 6-pixel trail — matches
-        demo animation #1.
-        """
-        n = len(self._SPINNER_RING)
-        head = (time.ticks_ms() // step_ms) % n
-
-        for i in range(PIXEL_N):
+    def pixels_center_square(self, rgb=(4, 4, 4)):
+        """Light the center 3x3 square in the given color. Preserves the
+        top status row."""
+        # Clear everything below the top row, then paint the square
+        for i in range(5, PIXEL_N):
             self.np[i] = (0, 0, 0)
-        for t in range(trail + 1):
-            idx = self._SPINNER_RING[(head - t) % n]
-            s = (trail - t) / trail if trail else 1.0
-            self.np[idx] = (int(rgb[0] * s),
-                            int(rgb[1] * s),
-                            int(rgb[2] * s))
-        self.np.write()
+        for idx in self._CENTER_SQUARE:
+            self.np[idx] = rgb
+        self.refresh_status()
+
+    # Back-compat aliases
+    pixels_bouncer   = pixels_center_square
+    pixels_spinner   = pixels_center_square
+    pixels_center_only = pixels_center_square
 
     # ── Button / buzzer ─────────────────────────────────
     def button_pressed(self):
@@ -313,38 +388,48 @@ class Wand:
         return resp[1:5]
 
     # ── NFC public API ──────────────────────────────────
+    _last_card_color = None  # remembers the last tapped card for the square
+
     def read_card(self, timeout_ms=None, animate=True):
         """Wait for a LEGO Connection Card. Returns (color, serial) or None on timeout.
 
-        animate=True plays the spinner while waiting, then lights the center
-        pixel white to indicate 'card detected, now connecting…'. The caller
-        should call pixels_card_faint() and play_connect_jingle() once BLE
-        connection is actually established.
+        animate=True shows the center square: faint white until any card
+        has been tapped, then in the color of the most recent card. When
+        a new card is tapped the square updates to the new color.
         """
         if not self._nfc_ready:
             raise RuntimeError("NFC not initialised")
+
+        if animate:
+            if self._last_card_color is None:
+                self.pixels_center_square((4, 4, 4))    # never-tapped: faint white
+            else:
+                rgb = self._FAINT_CARD_RGB.get(self._last_card_color, (4, 4, 4))
+                self.pixels_center_square(rgb)
+
         start = time.ticks_ms()
         while True:
-            if animate:
-                self.pixels_spinner()
+            now = time.ticks_ms()
+
             if timeout_ms is not None and \
-                    time.ticks_diff(time.ticks_ms(), start) > timeout_ms:
-                if animate: self.pixels_clear()
+                    time.ticks_diff(now, start) > timeout_ms:
                 return None
-            if self._detect_tag():
+
+            if self._detect_tag(timeout=200):
                 try:
                     page = self._read_page(5)
                     raw_color = page[1]
                     color  = _raw_to_app_color(raw_color)
                     serial = (page[2] << 8) | page[3]
+                    self._last_card_color = color
                     if animate:
-                        # Card detected — show center pixel to indicate
-                        # "connecting…". Caller takes over once BLE is up.
-                        self.pixels_center_only((2, 2, 2))
+                        rgb = self._FAINT_CARD_RGB.get(color, (1, 1, 1))
+                        self.pixels_center_square(rgb)
                     return color, serial
                 except RuntimeError:
                     pass
-            time.sleep_ms(50)
+
+            time.sleep_ms(100)
 
     def read_card_named(self, timeout_ms=None, animate=True):
         r = self.read_card(timeout_ms, animate)
