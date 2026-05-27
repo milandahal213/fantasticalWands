@@ -89,6 +89,14 @@ def _new_slot():
 
 class BLEDevice:
     def __init__(self):
+        # Switch to external antenna before activating BLE.
+        # GPIO3 = antenna select A (low = external path enabled)
+        # GPIO14 = antenna select B (high = external antenna)
+        # Must be done before ble.active(True) or the radio starts on PCB antenna.
+        Pin(3,  Pin.OUT).value(0)
+        time.sleep_ms(100)
+        Pin(14, Pin.OUT).value(1)
+
         self.ble = bluetooth.BLE()
         self.ble.active(True)
         self.ble.config(mtu=MTU_SIZE)
