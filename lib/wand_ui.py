@@ -46,8 +46,6 @@ ANIM_PIXELS  = tuple(range(5, 25))   # rows 1..4 (20 pixels)
 COLOR_SPINNER        = (10, 10, 10)   # white spinner head
 COLOR_SPINNER_TRAIL  = ( 3,  3,  3)   # faint white trail
 COLOR_SPINNER_BG     = ( 1,  1,  1)   # barely-on background
-COLOR_DEVICE_SOLID   = ( 5,  8,  2)   # connected device
-COLOR_DEVICE_BLINK   = ( 5,  8,  2)   # finding (toggled on/off)
 COLOR_FLASH          = (10, 10, 10)   # white flash
 
 # Trigger pixel colors (first pixel of each rule row)
@@ -59,6 +57,15 @@ COLOR_TRIGGER_COLOR       = (10,  3,  6)  # pink    — color sensor
 COLOR_ACTION_SINGLE_MOTOR = ( 3, 10,  3)  # light green
 COLOR_ACTION_DOUBLE_MOTOR = ( 0,  6,  0)  # dark green
 COLOR_ACTION_OFF          = ( 0,  0,  0)  # empty slot
+
+# Device status colors — match their trigger/action colors for consistency
+# Keyed by LEGO product_id (512=Single, 513=Double, 514=Color, 515=Controller)
+_DEVICE_STATUS_COLORS = {
+    512: COLOR_ACTION_SINGLE_MOTOR,   # Single Motor  → light green
+    513: COLOR_ACTION_DOUBLE_MOTOR,   # Double Motor  → dark green
+    514: COLOR_TRIGGER_COLOR,         # Color Sensor  → pink
+    515: COLOR_TRIGGER_CONTROLLER,    # Controller    → dark deep red
+}
 
 # Pairing card palette for pixel 0 (final PWM values, peak channel 10)
 CARD_COLORS = {
@@ -112,8 +119,11 @@ class WandUI:
         self.wand = wand
         self.np   = wand.np
         self.card_color  = card_color
-        self.connected   = [False] * MAX_DEVICES
+        # connected[i] = product_id if connected, None if empty/disconnected
+        self.connected   = [None] * MAX_DEVICES
         self.finding     = [False] * MAX_DEVICES
+        # slot_name → slot_index for disconnect lookup
+        self._slot_name_to_idx = {}
         self._spinner_phase = 0
 
         try:
@@ -165,11 +175,11 @@ class WandUI:
 
     # ── top row: card pixel + device status ────────────────────────
     def device_count(self):
-        return sum(1 for c in self.connected if c)
+        return sum(1 for c in self.connected if c is not None)
 
     def _next_free_slot(self):
         for i in range(MAX_DEVICES):
-            if not self.connected[i] and not self.finding[i]:
+            if self.connected[i] is None and not self.finding[i]:
                 return i
         return None
 
@@ -179,11 +189,22 @@ class WandUI:
         self.finding[i] = True
         return i
 
-    def mark_connected(self, slot_index):
+    def mark_connected(self, slot_index, product_id=None, slot_name=None):
         if slot_index is None: return
         if 0 <= slot_index < MAX_DEVICES:
             self.finding[slot_index]   = False
-            self.connected[slot_index] = True
+            self.connected[slot_index] = product_id
+            if slot_name is not None:
+                self._slot_name_to_idx[slot_name] = slot_index
+
+    def mark_disconnected(self, slot_name):
+        """Clear the LED for a device that has disconnected."""
+        idx = self._slot_name_to_idx.pop(slot_name, None)
+        if idx is not None and 0 <= idx < MAX_DEVICES:
+            self.connected[idx] = None
+            self.np[DEVICE_PIXELS[idx]] = (0, 0, 0)
+            self.np.write()
+            print("  ui: cleared device pixel {} ({})".format(idx, slot_name))
 
     def mark_failed(self, slot_index):
         if slot_index is None: return
@@ -192,16 +213,15 @@ class WandUI:
 
     def render_top_row(self):
         """Repaint row 0: pixel 0 = card color, pixels 1-4 = device status."""
-        # Pixel 0: pairing card color
         self._render_card_pixel()
-
-        # Pixels 1-4: device status
         blink_on = (time.ticks_ms() // (self.BLINK_PERIOD_MS // 2)) & 1
         for i, pix in enumerate(DEVICE_PIXELS):
-            if self.connected[i]:
-                self.np[pix] = COLOR_DEVICE_SOLID
+            pid = self.connected[i]
+            if pid is not None:
+                # Use device-specific color, dim slightly for single/double motor
+                self.np[pix] = _DEVICE_STATUS_COLORS.get(pid, (5, 5, 5))
             elif self.finding[i] and blink_on:
-                self.np[pix] = COLOR_DEVICE_BLINK
+                self.np[pix] = (4, 4, 4)   # dim white blink while scanning
             else:
                 self.np[pix] = (0, 0, 0)
 
@@ -307,7 +327,6 @@ class WandUI:
         rule: {'event': opcode, 'body': [opcodes]}
         dim: if True, render at 1/4 brightness (for non-firing rules during run)
         """
-        
         start = RULE_ROW_START[row_idx]
 
         # Pixel 0 of row = trigger color

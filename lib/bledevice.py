@@ -122,6 +122,7 @@ class BLEDevice:
         self._discover_done       = False
 
         self.ble.irq(self._irq)
+        self._disconnect_callback = None   # optional: called with slot_name on disconnect
         _led_set(0)
         print("BLEDevice ready")
 
@@ -239,6 +240,9 @@ class BLEDevice:
             if not self._handle_map:
                 _led_set(0)
             print("Disconnected slot '{}'".format(slot_name))
+            if self._disconnect_callback and slot_name:
+                try: micropython.schedule(self._disconnect_callback, slot_name)
+                except: pass
 
         elif event == _IRQ_GATTC_SERVICE_RESULT:
             conn_handle, start_h, end_h, uuid = data
@@ -451,6 +455,11 @@ class BLEDevice:
             self.ble.gattc_write(s['conn_handle'], s['write_handle'], data)
         except Exception as e:
             print("Write error ({}): {}".format(slot, e))
+
+    def set_disconnect_callback(self, cb):
+        """Register a callback invoked (via micropython.schedule) when any
+        slot disconnects. Signature: cb(slot_name: str)."""
+        self._disconnect_callback = cb
 
     def set_callback(self, slot, cb):
         if slot not in self._slots:

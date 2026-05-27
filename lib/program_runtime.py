@@ -200,7 +200,7 @@ def op_turn(ctx, args):
     # Calibration: milliseconds per degree of robot rotation
     # This needs empirical tuning based on wheel spacing and motor speed
     # At speed=50, estimate ~500ms for 90° turn → ~5.5ms per degree
-    MS_PER_DEGREE = 3.55  # Start here, tune as needed
+    MS_PER_DEGREE = 3.5  # empirical: 90° turn takes ~315ms at speed 50
     
     duration_ms = int(degrees * MS_PER_DEGREE)
     speed = DEFAULT_SPEED
@@ -373,7 +373,7 @@ def op_single_angle(ctx, args):
         degrees, direction, _slot))
 
     # ~280°/sec at speed 50 → convert degrees to milliseconds
-    DEGREES_PER_SEC_AT_50 = 78
+    DEGREES_PER_SEC_AT_50 = 78   # empirical: measured on hardware at speed 50
     duration_ms = int(degrees * 1000 / DEGREES_PER_SEC_AT_50)
 
     speed = DEFAULT_SPEED
@@ -723,9 +723,10 @@ def execute_event_loop(rules, wand, ble, connections,
                     try: on_rule_fire(idx)
                     except Exception as e: print("on_rule_fire err:", e)
                 _run_body(rule['body'], ctx, ui=ui, rule_idx=idx)
-                # After body runs, poller state for OTHER rules might be
-                # stale — but their state-tracking will catch up on the
-                # next poll naturally. No special handling needed.
+                # Reset to all-dim after body completes
+                if ui is not None:
+                    try: ui.paint_running(rules, -1)
+                    except Exception: pass
                 break
 
         time.sleep_ms(loop_ms)

@@ -111,7 +111,7 @@ def _connect_one(wand, ui, ble, result, slot_name, label, on_data,
 
     h.write([0x00])
     h.feed(updateTime=200)
-    ui.mark_connected(slot_idx)
+    ui.mark_connected(slot_idx, product_id=result.get('product_id'), slot_name=slot_name)
 
     return h
 
@@ -175,6 +175,12 @@ def _scan_and_connect(wand, ble, card_color, card_serial,
     raises CardPairError on hard misconfiguration.
     """
     ui = wand.ui
+
+    # Register disconnect callback so LEDs update when a device drops
+    def _on_disconnect(slot_name):
+        try: ui.mark_disconnected(slot_name)
+        except Exception as e: print("disconnect ui err:", e)
+    ble.set_disconnect_callback(_on_disconnect)
 
     # Compute how many top-row slots are still free
     free_slots = MAX_DEVICES - ui.device_count()

@@ -368,6 +368,7 @@ def _execute_with_visuals(wand, ble, ui):
 
     print("event loop starting — {} rule(s) armed".format(len(wand.program)))
     _arm_motors(wand)
+    ui.paint_running(wand.program, -1)   # show all rules dim while waiting
     try:
         execute_event_loop(wand.program, wand, ble, wand.connections,
                            on_card_during_run=_on_card,

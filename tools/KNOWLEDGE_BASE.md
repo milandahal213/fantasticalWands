@@ -278,7 +278,17 @@ Pixel indices: row N starts at pixel `N * 5`.
 | Pixel | Meaning | Color |
 |-------|---------|-------|
 | 0 | Bound card color | Matches card color (see CARD_COLORS) |
-| 1–4 | Connected devices | (5, 8, 2) green-ish when connected; blinks while finding |
+| 1–4 | Connected devices | Device-specific color (see below); blinks dim white while scanning; off when disconnected |
+
+**Device status colors (pixels 1–4):**
+| Device | Color | RGB |
+|--------|-------|-----|
+| Single Motor | Light green | (3, 10, 3) |
+| Double Motor | Dark green | (0, 6, 0) |
+| Color Sensor | Pink | (10, 3, 6) |
+| Controller | Dark deep red | (8, 0, 2) |
+
+Colors intentionally match the corresponding trigger/action colors so the top row visually telegraphs what's connected.
 
 **Trigger pixel (first pixel of each rule row):**
 | Event type | Color | RGB |
@@ -325,10 +335,16 @@ Pixel indices: row N starts at pixel `N * 5`.
 | `card_tap_intro()` | Pairing card tapped (card color tint) |
 | `paint_deck(program)` | Programming state; shows all rules |
 | `paint_running(program, idx)` | Execution; firing rule full brightness, others at 1/4 |
+| `paint_running(program, -1)` | Waiting for next event; all rules shown dim |
 | `show_battery(soc)` | BATTERY card tapped |
 
 ### During Execution
-Firing rule row = **full brightness**. All other rule rows = **1/4 brightness** (each channel divided by 4).
+- **GO tapped** → all rules shown dim immediately (`paint_running(program, -1)`)
+- **Rule fires** → firing row full brightness, all others 1/4 brightness
+- **Body finishes** → resets to all-dim (`paint_running(program, -1)`)
+- **STOP tapped** → `paint_deck(program)` restores normal programming view
+
+Firing rule row = **full brightness**. All other rule rows = **1/4 brightness** (each channel divided by 4). Passing `-1` as `firing_rule_idx` dims all rows.
 
 ---
 
@@ -347,6 +363,14 @@ Firing rule row = **full brightness**. All other rule rows = **1/4 brightness** 
 2. System scans BLE for devices advertising matching color + serial
 3. Up to 4 devices can be paired per session
 4. Devices stay connected until Ctrl+C or power off
+
+### Disconnect Detection
+When a device drops, its top-row LED turns off automatically. The chain:
+1. `BLEDevice._irq` fires `_IRQ_PERIPHERAL_DISCONNECT` → calls registered callback via `micropython.schedule`
+2. `cardpair._scan_and_connect` registers `ble.set_disconnect_callback(_on_disconnect)` on first pairing
+3. Callback calls `ui.mark_disconnected(slot_name)` → looks up `slot_name → slot_index` from internal map → clears that pixel immediately
+
+`WandUI` stores `_slot_name_to_idx` dict populated at `mark_connected(slot_idx, product_id, slot_name)` time.
 
 ### Advertised LEGO Product IDs
 ```
