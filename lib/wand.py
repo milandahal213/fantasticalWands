@@ -90,6 +90,18 @@ _CMD_SAMCONFIGURATION    = 0x14
 _CMD_INLISTPASSIVETARGET = 0x4A
 _CMD_INDATAEXCHANGE      = 0x40
 _MIFARE_CMD_READ         = 0x30
+_MIFARE_CMD_AUTH_A       = 0x60
+_MIFARE_CMD_AUTH_B       = 0x61
+
+# Common MIFARE Classic keys to try when default fails
+# Rotates through these in order, trying both key A and key B
+COMMON_KEYS = [
+    b'\xFF\xFF\xFF\xFF\xFF\xFF',  # Default factory key
+    b'\xD3\xF7\xD3\xF7\xD3\xF7',  # NDEF key
+    b'\xA0\xA1\xA2\xA3\xA4\xA5',  # MAD key
+    b'\xB0\xB1\xB2\xB3\xB4\xB5',  # Alternative transport key
+    b'\x00\x00\x00\x00\x00\x00',  # All zeros
+]
 
 
 def _scale(rgb, brightness):
@@ -377,21 +389,90 @@ class Wand:
         try:
             resp = self._send_command(_CMD_INLISTPASSIVETARGET, b'\x01\x00', timeout=timeout)
         except RuntimeError:
-            return False
-        return len(resp) >= 6 and resp[0] != 0
+            return None
+        if len(resp) < 6 or resp[0] == 0:
+            return None
+        # Extract UID from response
+        # resp format: [num_targets, tag_num, SENS_RES[2], SEL_RES, uid_len, uid...]
+        uid_len = resp[5]
+        if len(resp) < 6 + uid_len:
+            return None
+        uid = resp[6:6+uid_len]
+        return uid
 
-    def _read_page(self, page):
+    def _authenticate(self, uid, block, key, key_type):
+        """Authenticate to a MIFARE Classic block.
+        
+        Args:
+            uid: Card UID bytes
+            block: Block number to authenticate
+            key: 6-byte key
+            key_type: _MIFARE_CMD_AUTH_A or _MIFARE_CMD_AUTH_B
+        
+        Returns:
+            True if auth succeeded, False otherwise
+        """
+        if len(key) != 6:
+            return False
+        # Build auth command: [key_type, block, key[6], uid[...]]
+        params = bytes([0x01, key_type, block]) + key + uid
+        try:
+            resp = self._send_command(_CMD_INDATAEXCHANGE, params, timeout=1000)
+            # Success if status byte (resp[0] & 0x3F) == 0
+            return len(resp) > 0 and (resp[0] & 0x3F) == 0
+        except RuntimeError:
+            return False
+
+    def _read_block(self, block):
+        """Read a MIFARE Classic block (must be authenticated first)."""
         resp = self._send_command(_CMD_INDATAEXCHANGE,
-                                  bytes([0x01, _MIFARE_CMD_READ, page]), timeout=1000)
+                                  bytes([0x01, _MIFARE_CMD_READ, block]), timeout=1000)
         if (resp[0] & 0x3F) != 0:
             raise RuntimeError("Read error 0x{:02X}".format(resp[0]))
-        return resp[1:5]
+        return resp[1:17]  # 16 bytes of block data
+
+    def _read_page_multikey(self, page):
+        """Try to read a MIFARE Classic page using multiple common keys.
+        
+        Returns:
+            4-byte page data if successful, raises RuntimeError if all keys fail
+        """
+        # First try to detect/select the tag
+        uid = self._detect_tag(timeout=200)
+        if uid is None:
+            raise RuntimeError("Tag not present")
+        
+        # Convert page to block (page 5 = block 5 in MIFARE Classic 1K)
+        block = page
+        
+        # Try each key with both auth types
+        for key in COMMON_KEYS:
+            for key_type in [_MIFARE_CMD_AUTH_A, _MIFARE_CMD_AUTH_B]:
+                # Re-select card before each auth attempt (Classic requirement)
+                uid = self._detect_tag(timeout=150)
+                if uid is None:
+                    continue
+                
+                # Try authentication
+                if self._authenticate(uid, block, key, key_type):
+                    # Auth succeeded - read the block
+                    try:
+                        block_data = self._read_block(block)
+                        # Return first 4 bytes (page data)
+                        return block_data[0:4]
+                    except RuntimeError:
+                        continue
+        
+        # All keys failed
+        raise RuntimeError("Auth failed with all keys")
 
     # ── NFC public API ──────────────────────────────────
     _last_card_color = None  # remembers the last tapped card for the square
 
     def read_card(self, timeout_ms=None, animate=True):
         """Wait for a LEGO Connection Card. Returns (color, serial) or None on timeout.
+        
+        Now supports locked cards by trying multiple common MIFARE keys.
 
         animate=True shows the center square: faint white until any card
         has been tapped, then in the color of the most recent card. When
@@ -417,7 +498,8 @@ class Wand:
 
             if self._detect_tag(timeout=200):
                 try:
-                    page = self._read_page(5)
+                    # Try to read page 5 with multi-key support
+                    page = self._read_page_multikey(5)
                     raw_color = page[1]
                     color  = _raw_to_app_color(raw_color)
                     serial = (page[2] << 8) | page[3]

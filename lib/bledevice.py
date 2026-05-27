@@ -4,6 +4,7 @@
 from micropython import const
 import bluetooth
 import micropython
+import time
 from machine import Pin
 
 micropython.alloc_emergency_exception_buf(256)
@@ -20,6 +21,7 @@ WRITE_UUID       = bluetooth.UUID('0000fd02-0001-1000-8000-00805f9b34fb')
 NOTIFY_UUID      = bluetooth.UUID('0000fd02-0002-1000-8000-00805f9b34fb')
 
 _IRQ_SCAN_RESULT                 = const(5)
+_IRQ_SCAN_DONE                   = const(6)
 _IRQ_PERIPHERAL_CONNECT          = const(7)
 _IRQ_PERIPHERAL_DISCONNECT       = const(8)
 _IRQ_GATTC_SERVICE_RESULT        = const(9)
@@ -40,7 +42,11 @@ LEGO_COMPANY_ID = 0x0397  # LEGO company identifier in BLE manufacturer data
 
 def _parse_lego_mfg(adv_data):
     """Parse BLE advertising data and return LEGO card info if present.
-    Returns (product_id, card_color, card_serial) or (None, None, None)."""
+    Returns (product_id, card_color, card_serial) or (None, None, None).
+
+    The color byte is run through program_cards.remap_color() so it
+    matches the value read off NFC cards by read_card_universal().
+    This is the SAME remap used everywhere — one source of truth."""
     i = 0
     while i < len(adv_data):
         length = adv_data[i]
@@ -55,7 +61,13 @@ def _parse_lego_mfg(adv_data):
                 # [product_group, product_device, card_color, serial_lo, serial_hi]
                 if len(payload) >= 5:
                     product_id  = (payload[0] << 8) | payload[1]
-                    card_color  = payload[2]
+                    # Lazy import — bledevice.py loads before program_cards
+                    # on some boot paths, and we don't want a hard dep.
+                    try:
+                        from program_cards import remap_color
+                        card_color = remap_color(payload[2])
+                    except ImportError:
+                        card_color = payload[2]
                     card_serial = payload[3] | (payload[4] << 8)
                     return product_id, card_color, card_serial
         i += length + 1
@@ -84,7 +96,7 @@ class BLEDevice:
         self._slots     = {}   # slot_name → slot state dict
         self._handle_map= {}   # conn_handle (int) → slot_name
 
-        # current scan target
+        # current scan target (single-target mode used by scan())
         self._scan_slot = None
         self._scan_name = None
         self._scan_mfg  = None
@@ -93,6 +105,13 @@ class BLEDevice:
         self._scan_product_id  = None
         self._scan_seen = set()
         self._scan_found= False
+
+        # discover mode (collects multiple matches, no auto-connect)
+        self._discover_active     = False
+        self._discover_results    = []   # list of result dicts
+        self._discover_seen_addrs = set()
+        self._discover_filter     = None # callable(name, pid, color, serial) -> bool
+        self._discover_done       = False
 
         self.ble.irq(self._irq)
         _led_set(0)
@@ -103,9 +122,41 @@ class BLEDevice:
 
         if event == _IRQ_SCAN_RESULT:
             addr_type, addr, adv_type, rssi, adv_data = data
+            addr_str = ':'.join('%02X' % b for b in addr)
+
+            # ── Discover mode: collect everything that matches, don't connect
+            if self._discover_active:
+                if addr_str in self._discover_seen_addrs:
+                    return
+                name = self._decode(adv_data) or ''
+                product_id, card_color, card_serial = _parse_lego_mfg(adv_data)
+                # Only LEGO devices are interesting here
+                if product_id is None:
+                    return
+                # Debug: log every LEGO device we see and whether it matched
+                matched = (self._discover_filter is None or
+                           self._discover_filter(name, product_id,
+                                                 card_color, card_serial))
+                print("  adv: pid={} color={} serial={} match={}".format(
+                    product_id, card_color, card_serial,
+                    'yes' if matched else 'no'))
+                if not matched:
+                    return
+                self._discover_seen_addrs.add(addr_str)
+                self._discover_results.append({
+                    'addr_type':   addr_type,
+                    'addr':        bytes(addr),
+                    'name':        name,
+                    'product_id':  product_id,
+                    'card_color':  card_color,
+                    'card_serial': card_serial,
+                    'rssi':        rssi,
+                })
+                return
+
+            # ── Single-target scan mode (existing behaviour)
             if self._scan_found:
                 return
-            addr_str = ':'.join('%02X' % b for b in addr)
             if addr_str in self._scan_seen:
                 return
             self._scan_seen.add(addr_str)
@@ -152,6 +203,10 @@ class BLEDevice:
                 self._scan_slot))
             self.ble.gap_scan(None)
             self.ble.gap_connect(addr_type, addr)
+
+        elif event == _IRQ_SCAN_DONE:
+            if self._discover_active:
+                self._discover_done = True
 
         elif event == _IRQ_PERIPHERAL_CONNECT:
             conn_handle, addr_type, addr = data
@@ -282,6 +337,93 @@ class BLEDevice:
         if card_serial is not None: desc += ' serial={:04d}'.format(card_serial)
         print("Scanning for {} → slot '{}'...".format(desc.strip(), slot))
         self.ble.gap_scan(duration, 30000, 30000, True)
+
+    def discover(self, duration_ms=5000, card_color=None, card_serial=None,
+                 product_id=None, name=None, filter_fn=None,
+                 progress_cb=None, idle_cb=None):
+        """Scan for ``duration_ms`` and return ALL matching LEGO devices.
+
+        Does NOT connect. Use this when you want to know what's around
+        (e.g. "every device wearing card color X serial Y") and connect
+        to each one yourself afterwards.
+
+        Filters work like ``scan()``. ``filter_fn(name, product_id,
+        card_color, card_serial)`` is an optional extra predicate.
+
+        ``progress_cb(result_dict)`` is called once per *new* device found
+        during the scan — handy for blinking a status LED as devices arrive.
+
+        Returns a list of dicts:
+            [{'addr_type', 'addr', 'name', 'product_id',
+              'card_color', 'card_serial', 'rssi'}, ...]
+        """
+        def _filter(n, pid, col, ser):
+            if name and (not n or name not in n):           return False
+            if product_id  is not None and pid != product_id:   return False
+            if card_color  is not None and col != card_color:   return False
+            if card_serial is not None and ser != card_serial:  return False
+            if filter_fn is not None and not filter_fn(n, pid, col, ser):
+                return False
+            return True
+
+        self._discover_active     = True
+        self._discover_results    = []
+        self._discover_seen_addrs = set()
+        self._discover_filter     = _filter
+        self._discover_done       = False
+
+        # interval/window in microseconds — same as scan() for parity
+        self.ble.gap_scan(duration_ms, 30000, 30000, True)
+
+        # Wait for the scan to finish, reporting new finds as they arrive
+        last_seen = 0
+        start = time.ticks_ms()
+        while not self._discover_done:
+            # Surface any newly arrived results to the progress callback
+            if progress_cb is not None:
+                while last_seen < len(self._discover_results):
+                    try:
+                        progress_cb(self._discover_results[last_seen])
+                    except Exception as e:
+                        print("progress_cb err:", e)
+                    last_seen += 1
+            # Safety net: gap_scan should fire _IRQ_SCAN_DONE on its own,
+            # but if it ever doesn't, bail at duration + 1s.
+            if time.ticks_diff(time.ticks_ms(), start) > duration_ms + 1000:
+                try: self.ble.gap_scan(None)
+                except: pass
+                break
+            if idle_cb is not None:
+                try: idle_cb()
+                except Exception as e: print("idle_cb err:", e)
+            time.sleep_ms(50)
+
+        # Drain any results that arrived between the last poll and SCAN_DONE
+        if progress_cb is not None:
+            while last_seen < len(self._discover_results):
+                try:
+                    progress_cb(self._discover_results[last_seen])
+                except Exception as e:
+                    print("progress_cb err:", e)
+                last_seen += 1
+
+        results = self._discover_results
+        self._discover_active  = False
+        self._discover_filter  = None
+        self._discover_results = []
+        return results
+
+    def connect_to(self, slot, addr_type, addr):
+        """Connect to a previously-discovered device by raw BLE address.
+        Use the addr_type/addr returned by discover().
+        """
+        existing_cb = self._slots.get(slot, {}).get('callback')
+        self._slots[slot] = _new_slot()
+        self._slots[slot]['callback'] = existing_cb
+        self._scan_slot  = slot
+        self._scan_found = False
+        # gap_connect kicks off the same chain as the post-scan path
+        self.ble.gap_connect(addr_type, addr)
 
     def is_connected(self, slot):
         s = self._slots.get(slot, {})
