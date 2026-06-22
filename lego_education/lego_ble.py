@@ -2,23 +2,20 @@
 MicroPython BLE driver for LEGO Education devices (ESP32-C6).
 
 Uses only the standard 'bluetooth' module — no aioble or async required.
-All operations are synchronous / polling-based.
+Supports multiple simultaneous connections (one per LEGO hub).
 
 Usage:
-    from lego_ble import LegoDevice, COLOR_RED, MOTOR_BITS_LEFT, MOTOR_MOVE_CW
+    from lego_ble import LegoDevice, COLOR_RED, MOTOR_BITS_LEFT
 
-    dev = LegoDevice()
-    dev.scan_and_connect()          # blocks until connected (or raises)
-    dev.program_start()
-    dev.enable_notifications(50)    # 50 ms sensor update interval
-    dev.set_light(COLOR_RED)
-    dev.motor_run(MOTOR_BITS_LEFT, MOTOR_MOVE_CW)
+    motor  = LegoDevice()
+    sensor = LegoDevice()
 
-    import time
-    time.sleep_ms(2000)
+    motor.scan_and_connect(name_filter="Single Motor")
+    sensor.scan_and_connect(name_filter="Color Sensor")
 
-    dev.motor_stop(MOTOR_BITS_LEFT)
-    dev.disconnect()
+    motor.program_start()
+    sensor.program_start()
+    sensor.enable_notifications(50)
 """
 
 import bluetooth
@@ -29,12 +26,11 @@ import time
 _SVC_UUID   = bluetooth.UUID("0000FD02-0000-1000-8000-00805F9B34FB")
 _WRITE_UUID = bluetooth.UUID("0000FD02-0001-1000-8000-00805F9B34FB")
 _NOTIF_UUID = bluetooth.UUID("0000FD02-0002-1000-8000-00805F9B34FB")
+_CCCD_UUID  = bluetooth.UUID(0x2902)
 
-# Bytes of _SVC_UUID in little-endian (used to match advertising data)
-# 0000FD02-0000-1000-8000-00805F9B34FB → LE bytes:
 _SVC_UUID_BYTES = bytes([0x02, 0xFD, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10,
                           0x80, 0x00, 0x00, 0x80, 0x5F, 0x9B, 0x34, 0xFB])
-_SVC_UUID16 = 0xFD02  # same UUID as 16-bit shorthand
+_SVC_UUID16 = 0xFD02
 
 # ── BLE IRQ event IDs ─────────────────────────────────────────────────────────
 _IRQ_SCAN_RESULT                 = 5
@@ -47,29 +43,113 @@ _IRQ_GATTC_CHARACTERISTIC_RESULT = 11
 _IRQ_GATTC_CHARACTERISTIC_DONE   = 12
 _IRQ_GATTC_DESCRIPTOR_RESULT     = 13
 _IRQ_GATTC_DESCRIPTOR_DONE       = 14
+_IRQ_GATTC_WRITE_DONE            = 17
 _IRQ_GATTC_NOTIFY                = 18
 
-_CCCD_UUID = bluetooth.UUID(0x2902)  # Client Characteristic Configuration Descriptor
+# ── Shared BLE instance & dispatcher ─────────────────────────────────────────
+_ble            = bluetooth.BLE()
+_ble.active(True)
+_registry       = {}   # conn_handle -> LegoDevice
+_pending        = None # LegoDevice currently in scan/connect phase
+_scan_done_flag = False
+
+def _global_irq(event, data):
+    global _scan_done_flag, _pending
+
+    if event == _IRQ_SCAN_RESULT:
+        addr_type, addr, adv_type, rssi, adv_data = data
+        if _pending is not None and _pending._scan_result is None:
+            if _adv_has_lego_service(bytes(adv_data)):
+                name = _adv_name(bytes(adv_data))
+                nf = _pending._name_filter
+                if nf is None or (name and nf.lower() in name.lower()):
+                    _pending._scan_result = (addr_type, bytes(addr))
+
+    elif event == _IRQ_SCAN_DONE:
+        _scan_done_flag = True
+
+    elif event == _IRQ_PERIPHERAL_CONNECT:
+        conn_handle, addr_type, addr = data
+        if _pending is not None:
+            _pending._conn_handle = conn_handle
+            _registry[conn_handle] = _pending
+
+    elif event == _IRQ_PERIPHERAL_DISCONNECT:
+        conn_handle = data[0]
+        dev = _registry.pop(conn_handle, None)
+        if dev is not None:
+            dev._conn_handle = None
+            print("Disconnected from hub")
+
+    else:
+        # Route all GATT events to the right device by conn_handle
+        try:
+            conn_handle = data[0]
+            dev = _registry.get(conn_handle)
+            if dev is not None:
+                dev._handle_irq(event, data)
+        except (IndexError, TypeError):
+            pass
+
+_ble.irq(_global_irq)
+
+
+# ── Advertising helpers ───────────────────────────────────────────────────────
+
+def _adv_has_lego_service(adv_data):
+    i = 0
+    while i < len(adv_data):
+        length = adv_data[i]
+        if length == 0 or i + length >= len(adv_data):
+            break
+        ad_type = adv_data[i + 1]
+        ad_val  = adv_data[i + 2 : i + 1 + length]
+        if ad_type in (0x02, 0x03):
+            for j in range(0, len(ad_val) - 1, 2):
+                if struct.unpack_from("<H", ad_val, j)[0] == _SVC_UUID16:
+                    return True
+        elif ad_type in (0x06, 0x07):
+            for j in range(0, len(ad_val) - 15, 16):
+                if bytes(ad_val[j : j + 16]) == _SVC_UUID_BYTES:
+                    return True
+        i += 1 + length
+    return False
+
+def _adv_name(adv_data):
+    i = 0
+    while i < len(adv_data):
+        length = adv_data[i]
+        if length == 0 or i + length >= len(adv_data):
+            break
+        ad_type = adv_data[i + 1]
+        if ad_type in (0x08, 0x09):  # shortened / complete local name
+            try:
+                return adv_data[i + 2 : i + 1 + length].decode("utf-8")
+            except Exception:
+                pass
+        i += 1 + length
+    return None
+
 
 # ── RPC message type IDs ──────────────────────────────────────────────────────
-INFO_REQUEST                  = 0
-INFO_RESPONSE                 = 1
-PROGRAM_FLOW_NOTIFICATION     = 32
-DEVICE_NOTIFICATION_REQUEST   = 40
-DEVICE_NOTIFICATION_RESPONSE  = 41
-DEVICE_NOTIFICATION           = 60
-LIGHT_COLOR_COMMAND           = 110
-PLAY_BEEP_COMMAND             = 112
-STOP_SOUND_COMMAND            = 114
-MOTOR_RUN_COMMAND             = 122
-MOTOR_RUN_FOR_DEGREES_COMMAND = 124
-MOTOR_RUN_FOR_TIME_COMMAND    = 126
-MOTOR_SET_SPEED_COMMAND       = 140
-MOTOR_STOP_COMMAND            = 138
-MOTOR_SET_END_STATE_COMMAND   = 142
+INFO_REQUEST                   = 0
+INFO_RESPONSE                  = 1
+PROGRAM_FLOW_NOTIFICATION      = 32
+DEVICE_NOTIFICATION_REQUEST    = 40
+DEVICE_NOTIFICATION_RESPONSE   = 41
+DEVICE_NOTIFICATION            = 60
+LIGHT_COLOR_COMMAND            = 110
+PLAY_BEEP_COMMAND              = 112
+STOP_SOUND_COMMAND             = 114
+MOTOR_RUN_COMMAND              = 122
+MOTOR_RUN_FOR_DEGREES_COMMAND  = 124
+MOTOR_RUN_FOR_TIME_COMMAND     = 126
+MOTOR_SET_SPEED_COMMAND        = 140
+MOTOR_STOP_COMMAND             = 138
+MOTOR_SET_END_STATE_COMMAND    = 142
 MOTOR_SET_ACCELERATION_COMMAND = 144
 
-# Sub-notification IDs (inside DeviceNotification payload)
+# Sub-notification IDs
 INFO_DEVICE_NOTIFICATION  = 0
 IMU_DEVICE_NOTIFICATION   = 1
 CARD_NOTIFICATION         = 3
@@ -112,32 +192,6 @@ COLOR_YELLOW  = 7
 COLOR_ORANGE  = 8
 COLOR_RED     = 9
 COLOR_WHITE   = 10
-
-
-# ── Advertising data helpers ──────────────────────────────────────────────────
-
-def _adv_has_lego_service(adv_data):
-    """Return True if adv_data contains the LEGO service UUID (16- or 128-bit)."""
-    i = 0
-    while i < len(adv_data):
-        length = adv_data[i]
-        if length == 0 or i + length >= len(adv_data):
-            break
-        ad_type = adv_data[i + 1]
-        ad_val  = adv_data[i + 2 : i + 1 + length]
-
-        if ad_type in (0x02, 0x03):  # 16-bit UUIDs (incomplete / complete)
-            for j in range(0, len(ad_val) - 1, 2):
-                if struct.unpack_from("<H", ad_val, j)[0] == _SVC_UUID16:
-                    return True
-
-        elif ad_type in (0x06, 0x07):  # 128-bit UUIDs
-            for j in range(0, len(ad_val) - 15, 16):
-                if bytes(ad_val[j : j + 16]) == _SVC_UUID_BYTES:
-                    return True
-
-        i += 1 + length
-    return False
 
 
 # ── Message serialisation ─────────────────────────────────────────────────────
@@ -188,11 +242,6 @@ def msg_stop_sound():
 # ── Notification parser ───────────────────────────────────────────────────────
 
 def parse_notification(data):
-    """Parse raw bytes from the notify characteristic.
-
-    Returns a list of dicts, each with at least a 'type' key.
-    The outer envelope (header byte + 2-byte length) is stripped automatically.
-    """
     out = []
     if not data:
         return out
@@ -205,7 +254,6 @@ def parse_notification(data):
     else:
         out.append({"type": msg_type, "raw": bytes(data[1:])})
     return out
-
 
 def _parse_inner(data, out):
     offset = 0
@@ -284,98 +332,75 @@ def _parse_inner(data, out):
             offset += 1
 
         else:
-            break  # unknown sub-type, cannot determine size
+            break
 
 
 # ── LegoDevice ────────────────────────────────────────────────────────────────
 
 class LegoDevice:
-    """Synchronous BLE client for a single LEGO Education hub.
+    """BLE client for a single LEGO Education hub.
 
-    All methods block until the operation completes (or timeout_ms elapses).
+    Multiple instances can be connected simultaneously — they share the
+    underlying bluetooth.BLE() instance and route events by conn_handle.
 
-    Args:
-        notification_callback: optional callable(list) called from the BLE IRQ
-            whenever the hub sends a notification. Keep it short — it runs in
-            IRQ context (no memory allocation, no sleeps).
-        timeout_ms: how long scan_and_connect() will wait (default 10 s).
+    Call scan_and_connect() sequentially (not concurrently) for each device.
     """
 
     def __init__(self, notification_callback=None, timeout_ms=10_000):
-        self._cb           = notification_callback
-        self._timeout_ms   = timeout_ms
+        self._cb          = notification_callback
+        self._timeout_ms  = timeout_ms
+        self._name_filter = None
 
-        self._ble          = bluetooth.BLE()
-        self._ble.active(True)
-        self._ble.irq(self._irq)
-
-        # State populated by IRQ handlers
-        self._scan_result  = None   # (addr_type, addr) of first match
-        self._scan_done    = False
+        # Connection state
+        self._scan_result  = None
         self._conn_handle  = None
-        self._disconnected = False
 
         # GATT handles
         self._svc_start       = None
         self._svc_end         = None
         self._write_handle    = None
         self._notif_handle    = None
-        self._notif_def_handle = None  # definition handle of the notify char
-        self._cccd_handle     = None   # discovered CCCD descriptor handle
+        self._notif_def_handle = None
+        self._cccd_handle     = None
 
-        self._svc_done        = False
-        self._char_done       = False
-        self._desc_done       = False
+        # Completion flags
+        self._svc_done  = False
+        self._char_done = False
+        self._desc_done = False
 
-    # ── IRQ dispatcher ────────────────────────────────────────────────────────
+    # ── Per-device IRQ handler (called by global dispatcher) ─────────────────
 
-    def _irq(self, event, data):
-        if event == _IRQ_SCAN_RESULT:
-            addr_type, addr, adv_type, rssi, adv_data = data
-            if self._scan_result is None and _adv_has_lego_service(bytes(adv_data)):
-                self._scan_result = (addr_type, bytes(addr))
-
-        elif event == _IRQ_SCAN_DONE:
-            self._scan_done = True
-
-        elif event == _IRQ_PERIPHERAL_CONNECT:
-            conn_handle, addr_type, addr = data
-            self._conn_handle = conn_handle
-
-        elif event == _IRQ_PERIPHERAL_DISCONNECT:
-            self._conn_handle  = None
-            self._disconnected = True
-
-        elif event == _IRQ_GATTC_SERVICE_RESULT:
-            conn_handle, start_handle, end_handle, uuid = data
+    def _handle_irq(self, event, data):
+        if event == _IRQ_GATTC_SERVICE_RESULT:
+            _, start, end, uuid = data
             if uuid == _SVC_UUID:
-                self._svc_start = start_handle
-                self._svc_end   = end_handle
+                self._svc_start = start
+                self._svc_end   = end
 
         elif event == _IRQ_GATTC_SERVICE_DONE:
             self._svc_done = True
 
         elif event == _IRQ_GATTC_CHARACTERISTIC_RESULT:
-            conn_handle, def_handle, value_handle, properties, uuid = data
+            _, def_h, val_h, props, uuid = data
             if uuid == _WRITE_UUID:
-                self._write_handle = value_handle
+                self._write_handle = val_h
             elif uuid == _NOTIF_UUID:
-                self._notif_handle     = value_handle
-                self._notif_def_handle = def_handle
+                self._notif_handle     = val_h
+                self._notif_def_handle = def_h
 
         elif event == _IRQ_GATTC_CHARACTERISTIC_DONE:
             self._char_done = True
 
         elif event == _IRQ_GATTC_DESCRIPTOR_RESULT:
-            conn_handle, dsc_handle, uuid = data
+            _, dsc_h, uuid = data
             if uuid == _CCCD_UUID:
-                self._cccd_handle = dsc_handle
+                self._cccd_handle = dsc_h
 
         elif event == _IRQ_GATTC_DESCRIPTOR_DONE:
             self._desc_done = True
 
         elif event == _IRQ_GATTC_NOTIFY:
-            conn_handle, value_handle, notify_data = data
+            _, val_h, notify_data = data
             if self._cb is not None:
                 parsed = parse_notification(bytes(notify_data))
                 self._cb(parsed)
@@ -383,7 +408,6 @@ class LegoDevice:
     # ── Internal helpers ──────────────────────────────────────────────────────
 
     def _wait(self, flag_fn, timeout_ms=5000, poll_ms=20):
-        """Block until flag_fn() returns True or timeout expires."""
         elapsed = 0
         while not flag_fn():
             time.sleep_ms(poll_ms)
@@ -394,75 +418,93 @@ class LegoDevice:
     # ── Connection management ─────────────────────────────────────────────────
 
     def scan_and_connect(self, name_filter=None):
-        """Scan for a LEGO hub and connect. Blocks until connected or raises."""
-        print("Scanning for LEGO hub…")
-        self._scan_result = None
-        self._scan_done   = False
-        # active=True to get scan-response packets (needed for full adv data)
-        self._ble.gap_scan(self._timeout_ms, 30_000, 30_000, True)
-        self._wait(lambda: self._scan_result is not None or self._scan_done,
-                   self._timeout_ms)
-        self._ble.gap_scan(None)  # stop scan
+        """Scan for a LEGO hub and connect.
 
-        if self._scan_result is None:
-            raise OSError("No LEGO hub found")
+        name_filter: optional string — hub name must contain this substring.
+        Call sequentially for each device (scans cannot overlap).
+        """
+        global _pending, _scan_done_flag
 
-        addr_type, addr = self._scan_result
-        print("Found hub, connecting…")
-        self._ble.gap_connect(addr_type, addr)
-        self._wait(lambda: self._conn_handle is not None)
-        print("Connected, discovering services…")
-
-        # Service discovery
-        self._svc_done  = False
-        self._svc_start = None
-        self._ble.gattc_discover_services(self._conn_handle)
-        self._wait(lambda: self._svc_done)
-
-        if self._svc_start is None:
-            raise OSError("LEGO service not found on device")
-
-        # Characteristic discovery
-        self._char_done    = False
+        self._name_filter  = name_filter
+        self._scan_result  = None
+        self._conn_handle  = None
+        self._svc_start    = None
+        self._svc_end      = None
         self._write_handle = None
         self._notif_handle = None
-        self._ble.gattc_discover_characteristics(
+        self._notif_def_handle = None
+        self._cccd_handle  = None
+        self._svc_done     = False
+        self._char_done    = False
+        self._desc_done    = False
+
+        label = '"{}"'.format(name_filter) if name_filter else "any LEGO hub"
+        print("Scanning for {}…".format(label))
+
+        _pending        = self
+        _scan_done_flag = False
+        _ble.gap_scan(self._timeout_ms, 30_000, 30_000, True)
+        self._wait(lambda: self._scan_result is not None or _scan_done_flag,
+                   self._timeout_ms)
+        _ble.gap_scan(None)
+        _pending = None
+
+        if self._scan_result is None:
+            raise OSError("Hub not found: {}".format(label))
+
+        addr_type, addr = self._scan_result
+        print("Found, connecting…")
+        _pending = self
+        _ble.gap_connect(addr_type, addr)
+        self._wait(lambda: self._conn_handle is not None)
+        _pending = None
+        print("Connected (handle={})".format(self._conn_handle))
+
+        # Service discovery
+        _ble.gattc_discover_services(self._conn_handle)
+        self._wait(lambda: self._svc_done)
+        if self._svc_start is None:
+            raise OSError("LEGO service not found")
+
+        # Characteristic discovery
+        _ble.gattc_discover_characteristics(
             self._conn_handle, self._svc_start, self._svc_end)
         self._wait(lambda: self._char_done)
-
         if self._write_handle is None or self._notif_handle is None:
             raise OSError("Required characteristics not found")
 
-        # Discover the CCCD descriptor for the notify characteristic.
-        # Search from def_handle+1 to service end (or a small window).
-        self._desc_done   = False
-        self._cccd_handle = None
-        self._ble.gattc_discover_descriptors(
-            self._conn_handle, self._notif_def_handle + 1, self._svc_end)
+        # Descriptor discovery — search full service range to reliably find CCCD
+        _ble.gattc_discover_descriptors(
+            self._conn_handle, self._svc_start, self._svc_end)
         self._wait(lambda: self._desc_done)
 
-        if self._cccd_handle is None:
-            raise OSError("CCCD descriptor not found — cannot enable notifications")
-
-        # Write 0x0001 to CCCD to subscribe to notifications
-        self._ble.gattc_write(self._conn_handle, self._cccd_handle,
-                              struct.pack("<H", 1), 1)
+        # Subscribe to BLE notifications
+        if self._cccd_handle is not None:
+            _ble.gattc_write(self._conn_handle, self._cccd_handle,
+                             struct.pack("<H", 1), 1)
+        else:
+            # Fallback: CCCD is almost always value_handle + 1
+            print("Warning: CCCD not found via discovery, trying value_handle+1")
+            _ble.gattc_write(self._conn_handle, self._notif_handle + 1,
+                             struct.pack("<H", 1), 1)
         time.sleep_ms(100)
         print("Ready.")
 
     def disconnect(self):
         if self._conn_handle is not None:
-            self._ble.gap_disconnect(self._conn_handle)
+            _ble.gap_disconnect(self._conn_handle)
             self._wait(lambda: self._conn_handle is None, timeout_ms=3000)
+
+    @property
+    def connected(self):
+        return self._conn_handle is not None
 
     # ── Send ──────────────────────────────────────────────────────────────────
 
     def send(self, data):
-        """Write raw bytes to the hub (write-without-response)."""
         if self._conn_handle is None:
             raise OSError("Not connected")
-        self._ble.gattc_write(self._conn_handle, self._write_handle,
-                              bytes(data), 0)
+        _ble.gattc_write(self._conn_handle, self._write_handle, bytes(data), 0)
 
     # ── High-level commands ───────────────────────────────────────────────────
 
@@ -476,7 +518,6 @@ class LegoDevice:
         self.send(msg_program_flow(PROGRAM_ACTION_STOP))
 
     def enable_notifications(self, interval_ms=50):
-        """Ask hub to send sensor data every interval_ms ms. 0 = disable."""
         self.send(msg_enable_notifications(interval_ms))
 
     def set_light(self, color=COLOR_WHITE, pattern=LIGHT_SOLID, intensity=100):
@@ -495,7 +536,6 @@ class LegoDevice:
         self.send(msg_motor_run_for_degrees(motor_bitmask, degrees, direction))
 
     def motor_set_speed(self, motor_bitmask, speed):
-        """-100 to 100"""
         self.send(msg_motor_set_speed(motor_bitmask, speed))
 
     def motor_set_end_state(self, motor_bitmask, end_state=MOTOR_END_BRAKE):
@@ -509,29 +549,3 @@ class LegoDevice:
 
     def stop_sound(self):
         self.send(msg_stop_sound())
-
-
-# ── Quick demo ────────────────────────────────────────────────────────────────
-
-def demo():
-    def on_notif(notifications):
-        for n in notifications:
-            print("notif:", n)
-
-    dev = LegoDevice(notification_callback=on_notif)
-    dev.scan_and_connect()
-    dev.program_start()
-    dev.enable_notifications(50)
-    time.sleep_ms(300)
-
-    dev.set_light(COLOR_WHITE, LIGHT_SOLID, 100)
-    time.sleep_ms(1000)
-    dev.set_light(COLOR_RED, LIGHT_PULSE, 80)
-
-    dev.motor_run(MOTOR_BITS_LEFT, MOTOR_MOVE_CW)
-    time.sleep_ms(2000)
-    dev.motor_stop(MOTOR_BITS_LEFT)
-
-    dev.program_stop()
-    dev.disconnect()
-    print("Done.")
