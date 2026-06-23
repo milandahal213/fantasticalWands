@@ -437,6 +437,16 @@ class LegoDevice:
             if elapsed >= timeout_ms:
                 raise OSError("BLE operation timed out")
 
+    def _wait_ok(self, flag_fn, timeout_ms=5000, poll_ms=20):
+        """Like _wait() but returns False on timeout instead of raising."""
+        elapsed = 0
+        while not flag_fn():
+            time.sleep_ms(poll_ms)
+            elapsed += poll_ms
+            if elapsed >= timeout_ms:
+                return False
+        return True
+
     # ── Connection management ─────────────────────────────────────────────────
 
     def scan_and_connect(self, name_filter=None):
@@ -476,16 +486,22 @@ class LegoDevice:
 
         addr_type, addr = self._scan_result
         print("Found, connecting…")
-        time.sleep_ms(500)  # let BLE stack settle before initiating connection
+        time.sleep_ms(300)  # let BLE stack settle before initiating connection
         _pending = self
+        # On SPIKE Prime, gap_connect() can raise a spurious ENOTCONN (errno
+        # 107) when a connection already exists — yet the new connection still
+        # completes a moment later. So we IGNORE the exception and rely on the
+        # _IRQ_PERIPHERAL_CONNECT event (with timeout) to confirm success.
         try:
             _ble.gap_connect(addr_type, addr)
-        except Exception as e:
-            print("gap_connect error:", e)
-            raise
-        self._wait(lambda: self._conn_handle is not None)
+        except OSError as e:
+            print("  (gap_connect returned {}; waiting for connect event…)".format(e))
+        connected = self._wait_ok(lambda: self._conn_handle is not None,
+                                   self._timeout_ms)
         _pending = None
-        time.sleep_ms(500)  # let connection settle before GATT discovery
+        if not connected:
+            raise OSError("Connection failed — no connect event received")
+        time.sleep_ms(300)  # let connection settle before GATT discovery
         print("Connected (handle={})".format(self._conn_handle))
 
         # Service discovery
