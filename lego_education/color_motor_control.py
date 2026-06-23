@@ -16,8 +16,8 @@ from lego_ble import (
 )
 
 # ── Tuning ────────────────────────────────────────────────────────────────────
-REFLECT_MIN   = 0      # reflected value at which motor stops
-REFLECT_MAX   = 1023   # reflected value at full speed
+REFLECT_MIN   = 5000   # below this → motor stops (dark surface / no surface)
+REFLECT_MAX   = 55000  # at or above this → full speed (bright white surface)
 MOTOR_MIN_SPEED = 10   # slowest the motor runs before stalling
 MOTOR_MAX_SPEED = 100
 SPEED_DEADBAND  = 3    # ignore changes smaller than this (avoids flooding hub)
