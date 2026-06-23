@@ -476,10 +476,16 @@ class LegoDevice:
 
         addr_type, addr = self._scan_result
         print("Found, connecting…")
+        time.sleep_ms(500)  # let BLE stack settle before initiating connection
         _pending = self
-        _ble.gap_connect(addr_type, addr)
+        try:
+            _ble.gap_connect(addr_type, addr)
+        except Exception as e:
+            print("gap_connect error:", e)
+            raise
         self._wait(lambda: self._conn_handle is not None)
         _pending = None
+        time.sleep_ms(500)  # let connection settle before GATT discovery
         print("Connected (handle={})".format(self._conn_handle))
 
         # Service discovery
