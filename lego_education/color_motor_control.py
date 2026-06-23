@@ -16,9 +16,9 @@ from lego_ble import (
 )
 
 # ── Tuning ────────────────────────────────────────────────────────────────────
-REFLECT_MIN   = 5000   # below this → motor stops (dark surface / no surface)
-REFLECT_MAX   = 55000  # at or above this → full speed (bright white surface)
-MOTOR_MIN_SPEED = 10   # slowest the motor runs before stalling
+REFLECT_MIN   = 0      # reflected value → minimum motor speed
+REFLECT_MAX   = 55000  # reflected value → maximum motor speed
+MOTOR_MIN_SPEED = 10   # slowest the motor ever runs
 MOTOR_MAX_SPEED = 100
 SPEED_DEADBAND  = 3    # ignore changes smaller than this (avoids flooding hub)
 
@@ -70,13 +70,7 @@ def main():
                     MOTOR_MIN_SPEED, MOTOR_MAX_SPEED)
 
                 if abs(speed - last_speed) >= SPEED_DEADBAND:
-                    if speed == 0:
-                        motor.motor_stop(MOTOR_BITS_LEFT)
-                    else:
-                        if last_speed == 0:
-                            # Restart the motor after a stop, then set speed
-                            motor.motor_run(MOTOR_BITS_LEFT, MOTOR_MOVE_CW)
-                        motor.motor_set_speed(MOTOR_BITS_LEFT, speed)
+                    motor.motor_set_speed(MOTOR_BITS_LEFT, speed)
                     print("Reflected: {:4d}  Speed: {:3d}%".format(reflected, speed))
                     last_speed = speed
 
