@@ -395,7 +395,6 @@ class LegoDevice:
     def _handle_irq(self, event, data):
         if event == _IRQ_GATTC_SERVICE_RESULT:
             _, start, end, uuid = data
-            print("  SVC:", start, end, uuid)
             if _is_svc_uuid(uuid):
                 self._svc_start = start
                 self._svc_end   = end
@@ -405,7 +404,6 @@ class LegoDevice:
 
         elif event == _IRQ_GATTC_CHARACTERISTIC_RESULT:
             _, def_h, val_h, props, uuid = data
-            print("  CHAR:", def_h, val_h, uuid)
             if _is_write_uuid(uuid):
                 self._write_handle = val_h
             elif _is_notif_uuid(uuid):
@@ -417,7 +415,6 @@ class LegoDevice:
 
         elif event == _IRQ_GATTC_DESCRIPTOR_RESULT:
             _, dsc_h, uuid = data
-            print("  DESC:", dsc_h, uuid)
             if _is_cccd_uuid(uuid):
                 self._cccd_handle = dsc_h
 
