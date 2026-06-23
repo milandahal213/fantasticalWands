@@ -73,6 +73,9 @@ def main():
                     if speed == 0:
                         motor.motor_stop(MOTOR_BITS_LEFT)
                     else:
+                        if last_speed == 0:
+                            # Restart the motor after a stop, then set speed
+                            motor.motor_run(MOTOR_BITS_LEFT, MOTOR_MOVE_CW)
                         motor.motor_set_speed(MOTOR_BITS_LEFT, speed)
                     print("Reflected: {:4d}  Speed: {:3d}%".format(reflected, speed))
                     last_speed = speed
