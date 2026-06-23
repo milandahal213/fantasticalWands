@@ -40,9 +40,11 @@ def main():
     motor  = LegoDevice()
     sensor = LegoDevice(notification_callback=on_sensor_notification)
 
-    # Connect to each hub one at a time (scans cannot overlap)
-    motor.scan_and_connect(name_filter="Single Motor")
-    sensor.scan_and_connect(name_filter="Color Sensor")
+    # Connect to each hub one at a time (scans cannot overlap).
+    # Turn on the motor hub first, then the sensor hub, so they connect in order.
+    # After first run, replace None with the exact names printed during scan.
+    motor.scan_and_connect()
+    sensor.scan_and_connect()
 
     motor.program_start()
     sensor.program_start()

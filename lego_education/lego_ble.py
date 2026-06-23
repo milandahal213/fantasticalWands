@@ -61,6 +61,9 @@ def _global_irq(event, data):
         if _pending is not None and _pending._scan_result is None:
             if _adv_has_lego_service(bytes(adv_data)):
                 name = _adv_name(bytes(adv_data))
+                print("  Found LEGO hub: '{}' addr={}".format(
+                    name or "?",
+                    ':'.join('{:02x}'.format(b) for b in addr)))
                 nf = _pending._name_filter
                 if nf is None or (name and nf.lower() in name.lower()):
                     _pending._scan_result = (addr_type, bytes(addr))
