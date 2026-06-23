@@ -22,6 +22,12 @@ import bluetooth
 import struct
 import time
 
+# Bump this string whenever lego_ble.py changes. It prints at import time so
+# you can confirm the SPIKE Prime is running the file you think it is. If the
+# printed version doesn't match, re-upload lego_ble.py to the device.
+__version__ = "spike-multiconnect-2"
+print("[lego_ble] loaded version:", __version__)
+
 # ── UUIDs ─────────────────────────────────────────────────────────────────────
 _SVC_UUID   = bluetooth.UUID("0000FD02-0000-1000-8000-00805F9B34FB")
 _WRITE_UUID = bluetooth.UUID("0000FD02-0001-1000-8000-00805F9B34FB")
