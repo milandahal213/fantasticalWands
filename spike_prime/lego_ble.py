@@ -28,6 +28,25 @@ _WRITE_UUID = bluetooth.UUID("0000FD02-0001-1000-8000-00805F9B34FB")
 _NOTIF_UUID = bluetooth.UUID("0000FD02-0002-1000-8000-00805F9B34FB")
 _CCCD_UUID  = bluetooth.UUID(0x2902)
 
+# SPIKE Prime reports the service as a 16-bit UUID (0xfd02) rather than 128-bit
+_SVC_UUID_16 = bluetooth.UUID(0xfd02)
+
+def _uuid_eq(a, b):
+    """UUID equality that handles both 16-bit and 128-bit representations."""
+    return str(a) == str(b)
+
+def _is_svc_uuid(u):
+    return _uuid_eq(u, _SVC_UUID) or _uuid_eq(u, _SVC_UUID_16)
+
+def _is_write_uuid(u):
+    return _uuid_eq(u, _WRITE_UUID)
+
+def _is_notif_uuid(u):
+    return _uuid_eq(u, _NOTIF_UUID)
+
+def _is_cccd_uuid(u):
+    return _uuid_eq(u, _CCCD_UUID)
+
 _SVC_UUID_BYTES = bytes([0x02, 0xFD, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10,
                           0x80, 0x00, 0x00, 0x80, 0x5F, 0x9B, 0x34, 0xFB])
 _SVC_UUID16 = 0xFD02
@@ -377,7 +396,7 @@ class LegoDevice:
         if event == _IRQ_GATTC_SERVICE_RESULT:
             _, start, end, uuid = data
             print("  SVC:", start, end, uuid)
-            if str(uuid) == str(_SVC_UUID):
+            if _is_svc_uuid(uuid):
                 self._svc_start = start
                 self._svc_end   = end
 
@@ -387,9 +406,9 @@ class LegoDevice:
         elif event == _IRQ_GATTC_CHARACTERISTIC_RESULT:
             _, def_h, val_h, props, uuid = data
             print("  CHAR:", def_h, val_h, uuid)
-            if str(uuid) == str(_WRITE_UUID):
+            if _is_write_uuid(uuid):
                 self._write_handle = val_h
-            elif str(uuid) == str(_NOTIF_UUID):
+            elif _is_notif_uuid(uuid):
                 self._notif_handle     = val_h
                 self._notif_def_handle = def_h
 
@@ -399,7 +418,7 @@ class LegoDevice:
         elif event == _IRQ_GATTC_DESCRIPTOR_RESULT:
             _, dsc_h, uuid = data
             print("  DESC:", dsc_h, uuid)
-            if str(uuid) == str(_CCCD_UUID):
+            if _is_cccd_uuid(uuid):
                 self._cccd_handle = dsc_h
 
         elif event == _IRQ_GATTC_DESCRIPTOR_DONE:
