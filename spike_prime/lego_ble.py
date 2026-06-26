@@ -25,7 +25,7 @@ import time
 # Bump this string whenever lego_ble.py changes. It prints at import time so
 # you can confirm the SPIKE Prime is running the file you think it is. If the
 # printed version doesn't match, re-upload lego_ble.py to the device.
-__version__ = "spike-multiconnect-4"
+__version__ = "spike-multiconnect-5-debug"
 print("[lego_ble] loaded version:", __version__)
 
 # ── UUIDs ─────────────────────────────────────────────────────────────────────
@@ -410,6 +410,8 @@ class LegoDevice:
 
         elif event == _IRQ_GATTC_CHARACTERISTIC_RESULT:
             _, def_h, val_h, props, uuid = data
+            print("  CHAR def={} val={} props={} uuid={}".format(
+                def_h, val_h, props, uuid))
             if _is_write_uuid(uuid):
                 self._write_handle = val_h
             elif _is_notif_uuid(uuid):
@@ -421,6 +423,7 @@ class LegoDevice:
 
         elif event == _IRQ_GATTC_DESCRIPTOR_RESULT:
             _, dsc_h, uuid = data
+            print("  DESC handle={} uuid={}".format(dsc_h, uuid))
             if _is_cccd_uuid(uuid):
                 self._cccd_handle = dsc_h
 
@@ -577,15 +580,19 @@ class LegoDevice:
                                   "discover_descriptors"):
             raise OSError("Descriptor discovery failed")
 
-        # Subscribe to BLE notifications
+        # Subscribe to BLE notifications by writing 0x0001 to the CCCD.
         if self._cccd_handle is not None:
-            _ble.gattc_write(self._conn_handle, self._cccd_handle,
-                             struct.pack("<H", 1), 1)
+            cccd = self._cccd_handle
         else:
-            # Fallback: CCCD is almost always value_handle + 1
-            print("Warning: CCCD not found via discovery, trying value_handle+1")
-            _ble.gattc_write(self._conn_handle, self._notif_handle + 1,
-                             struct.pack("<H", 1), 1)
+            cccd = self._notif_handle + 1  # CCCD per spec immediately follows
+            print("Warning: CCCD not found via discovery, using value_handle+1")
+        print("  Subscribing: notif_val={} -> CCCD handle={}".format(
+            self._notif_handle, cccd))
+        try:
+            _ble.gattc_write(self._conn_handle, cccd, struct.pack("<H", 1), 1)
+            print("  CCCD write issued OK")
+        except OSError as e:
+            print("  CCCD write FAILED:", e)
         time.sleep_ms(100)
         print("Ready.")
 
