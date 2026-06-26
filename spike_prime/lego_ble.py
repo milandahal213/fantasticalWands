@@ -25,7 +25,7 @@ import time
 # Bump this string whenever lego_ble.py changes. It prints at import time so
 # you can confirm the SPIKE Prime is running the file you think it is. If the
 # printed version doesn't match, re-upload lego_ble.py to the device.
-__version__ = "spike-multiconnect-2"
+__version__ = "spike-multiconnect-3"
 print("[lego_ble] loaded version:", __version__)
 
 # ── UUIDs ─────────────────────────────────────────────────────────────────────
@@ -453,6 +453,34 @@ class LegoDevice:
                 return False
         return True
 
+    def _gattc_retry(self, init_fn, done_fn, what, attempts=6, delay_ms=300,
+                     wait_ms=4000):
+        """Initiate a GATT operation and wait for its completion flag.
+
+        Right after a connection settles, the SPIKE Prime GATT client can
+        reject the first discovery call with EINVAL/EBUSY. Retry the
+        initiation a few times, and also retry if completion never arrives.
+        """
+        last = None
+        for i in range(attempts):
+            try:
+                init_fn()
+            except OSError as e:
+                last = e
+                print("  ({} init returned {}; retry {}/{}…)".format(
+                    what, e, i + 1, attempts))
+                time.sleep_ms(delay_ms)
+                continue
+            if self._wait_ok(done_fn, wait_ms):
+                return True
+            print("  ({} no completion; retry {}/{}…)".format(
+                what, i + 1, attempts))
+            time.sleep_ms(delay_ms)
+        if last is not None:
+            print("  ({} giving up after {} attempts: {})".format(
+                what, attempts, last))
+        return False
+
     # ── Connection management ─────────────────────────────────────────────────
 
     def scan_and_connect(self, name_filter=None):
@@ -507,26 +535,39 @@ class LegoDevice:
         _pending = None
         if not connected:
             raise OSError("Connection failed — no connect event received")
-        time.sleep_ms(300)  # let connection settle before GATT discovery
+        time.sleep_ms(600)  # let connection settle before GATT discovery
         print("Connected (handle={})".format(self._conn_handle))
 
-        # Service discovery
-        _ble.gattc_discover_services(self._conn_handle)
-        self._wait(lambda: self._svc_done)
+        # Service discovery — retried because the GATT client can reject the
+        # first call with EINVAL right after a connection settles.
+        def _init_svc():
+            self._svc_done = False
+            _ble.gattc_discover_services(self._conn_handle)
+        if not self._gattc_retry(_init_svc, lambda: self._svc_done,
+                                  "discover_services"):
+            raise OSError("Service discovery failed")
         if self._svc_start is None:
             raise OSError("LEGO service not found")
 
         # Characteristic discovery
-        _ble.gattc_discover_characteristics(
-            self._conn_handle, self._svc_start, self._svc_end)
-        self._wait(lambda: self._char_done)
+        def _init_char():
+            self._char_done = False
+            _ble.gattc_discover_characteristics(
+                self._conn_handle, self._svc_start, self._svc_end)
+        if not self._gattc_retry(_init_char, lambda: self._char_done,
+                                  "discover_characteristics"):
+            raise OSError("Characteristic discovery failed")
         if self._write_handle is None or self._notif_handle is None:
             raise OSError("Required characteristics not found")
 
         # Descriptor discovery — search full service range to reliably find CCCD
-        _ble.gattc_discover_descriptors(
-            self._conn_handle, self._svc_start, self._svc_end)
-        self._wait(lambda: self._desc_done)
+        def _init_desc():
+            self._desc_done = False
+            _ble.gattc_discover_descriptors(
+                self._conn_handle, self._svc_start, self._svc_end)
+        if not self._gattc_retry(_init_desc, lambda: self._desc_done,
+                                  "discover_descriptors"):
+            raise OSError("Descriptor discovery failed")
 
         # Subscribe to BLE notifications
         if self._cccd_handle is not None:
