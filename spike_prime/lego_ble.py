@@ -25,7 +25,7 @@ import time
 # Bump this string whenever lego_ble.py changes. It prints at import time so
 # you can confirm the SPIKE Prime is running the file you think it is. If the
 # printed version doesn't match, re-upload lego_ble.py to the device.
-__version__ = "spike-multiconnect-6-debug"
+__version__ = "spike-multiconnect-7"
 print("[lego_ble] loaded version:", __version__)
 
 # ── UUIDs ─────────────────────────────────────────────────────────────────────
@@ -410,8 +410,6 @@ class LegoDevice:
 
         elif event == _IRQ_GATTC_CHARACTERISTIC_RESULT:
             _, def_h, val_h, props, uuid = data
-            print("  CHAR def={} val={} props={} uuid={}".format(
-                def_h, val_h, props, uuid))
             if _is_write_uuid(uuid):
                 self._write_handle = val_h
             elif _is_notif_uuid(uuid):
@@ -423,17 +421,11 @@ class LegoDevice:
 
         elif event == _IRQ_GATTC_DESCRIPTOR_RESULT:
             _, dsc_h, uuid = data
-            print("  DESC handle={} uuid={}".format(dsc_h, uuid))
             if _is_cccd_uuid(uuid):
                 self._cccd_handle = dsc_h
 
         elif event == _IRQ_GATTC_DESCRIPTOR_DONE:
             self._desc_done = True
-
-        elif event == _IRQ_GATTC_WRITE_DONE:
-            _, val_h, status = data
-            print("  WRITE_DONE handle={} status={} (0=success)".format(
-                val_h, status))
 
         elif event == _IRQ_GATTC_NOTIFY:
             _, val_h, notify_data = data
@@ -576,28 +568,26 @@ class LegoDevice:
         if self._write_handle is None or self._notif_handle is None:
             raise OSError("Required characteristics not found")
 
-        # Descriptor discovery — search full service range to reliably find CCCD
+        # Descriptor discovery to find the CCCD (0x2902). Use a BOUNDED range
+        # around the notify characteristic — discovering over the full service
+        # range (end handle 0xFFFF) returns no descriptors on SPIKE firmware.
+        # The CCCD sits just after the notify characteristic value handle.
         def _init_desc():
             self._desc_done = False
-            _ble.gattc_discover_descriptors(
-                self._conn_handle, self._svc_start, self._svc_end)
-        if not self._gattc_retry(_init_desc, lambda: self._desc_done,
-                                  "discover_descriptors"):
-            raise OSError("Descriptor discovery failed")
+            lo = self._notif_def_handle
+            if lo is None or lo == 0xFFFF:
+                lo = self._svc_start
+            hi = self._notif_handle + 3
+            _ble.gattc_discover_descriptors(self._conn_handle, lo, hi)
+        # Descriptor discovery is best-effort: if it finds nothing we fall back
+        # to value_handle+1, which is the spec-guaranteed CCCD location.
+        self._gattc_retry(_init_desc, lambda: self._desc_done,
+                          "discover_descriptors", attempts=2)
 
         # Subscribe to BLE notifications by writing 0x0001 to the CCCD.
-        if self._cccd_handle is not None:
-            cccd = self._cccd_handle
-        else:
-            cccd = self._notif_handle + 1  # CCCD per spec immediately follows
-            print("Warning: CCCD not found via discovery, using value_handle+1")
-        print("  Subscribing: notif_val={} -> CCCD handle={}".format(
-            self._notif_handle, cccd))
-        try:
-            _ble.gattc_write(self._conn_handle, cccd, struct.pack("<H", 1), 1)
-            print("  CCCD write issued OK")
-        except OSError as e:
-            print("  CCCD write FAILED:", e)
+        cccd = self._cccd_handle if self._cccd_handle is not None \
+            else self._notif_handle + 1
+        _ble.gattc_write(self._conn_handle, cccd, struct.pack("<H", 1), 1)
         time.sleep_ms(100)
         print("Ready.")
 
