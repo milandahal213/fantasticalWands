@@ -25,7 +25,7 @@ import time
 # Bump this string whenever lego_ble.py changes. It prints at import time so
 # you can confirm the SPIKE Prime is running the file you think it is. If the
 # printed version doesn't match, re-upload lego_ble.py to the device.
-__version__ = "spike-multiconnect-3"
+__version__ = "spike-multiconnect-4"
 print("[lego_ble] loaded version:", __version__)
 
 # ── UUIDs ─────────────────────────────────────────────────────────────────────
@@ -512,7 +512,15 @@ class LegoDevice:
         _ble.gap_scan(self._timeout_ms, 30_000, 30_000, True)
         self._wait(lambda: self._scan_result is not None or _scan_done_flag,
                    self._timeout_ms)
-        _ble.gap_scan(None)
+
+        # Stop the scan and WAIT for it to fully stop before connecting.
+        # NimBLE rejects gap_connect() while the radio is still scanning, and
+        # gap_scan(None) completes asynchronously (signalled by _IRQ_SCAN_DONE).
+        # The passing diagnostic always let the scan fully stop first.
+        if not _scan_done_flag:
+            _scan_done_flag = False
+            _ble.gap_scan(None)
+            self._wait_ok(lambda: _scan_done_flag, 2000)
         _pending = None
 
         if self._scan_result is None:
