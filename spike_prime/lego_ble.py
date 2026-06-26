@@ -25,7 +25,7 @@ import time
 # Bump this string whenever lego_ble.py changes. It prints at import time so
 # you can confirm the SPIKE Prime is running the file you think it is. If the
 # printed version doesn't match, re-upload lego_ble.py to the device.
-__version__ = "spike-multiconnect-5-debug"
+__version__ = "spike-multiconnect-6-debug"
 print("[lego_ble] loaded version:", __version__)
 
 # ── UUIDs ─────────────────────────────────────────────────────────────────────
@@ -429,6 +429,11 @@ class LegoDevice:
 
         elif event == _IRQ_GATTC_DESCRIPTOR_DONE:
             self._desc_done = True
+
+        elif event == _IRQ_GATTC_WRITE_DONE:
+            _, val_h, status = data
+            print("  WRITE_DONE handle={} status={} (0=success)".format(
+                val_h, status))
 
         elif event == _IRQ_GATTC_NOTIFY:
             _, val_h, notify_data = data
