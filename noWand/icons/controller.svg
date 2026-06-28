@@ -1,0 +1,39 @@
+<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+  <!-- Right face -->
+  <polygon points="148,92 166,70 166,144 148,158" fill="#9a9a9a"/>
+  <!-- Front face -->
+  <polygon points="36,92 148,92 148,158 36,158" fill="#c0c0c0"/>
+  <!-- Top face -->
+  <polygon points="36,92 148,92 166,70 54,70" fill="#d8d8d8"/>
+
+  <!-- Studs row 0 (front) -->
+  <ellipse cx="57"  cy="87" rx="11" ry="7" fill="#c8c8c8" stroke="#a8a8a8" stroke-width="1.2"/>
+  <ellipse cx="57"  cy="84" rx="11" ry="7" fill="#e2e2e2" stroke="#b0b0b0" stroke-width="1.2"/>
+  <ellipse cx="85"  cy="87" rx="11" ry="7" fill="#c8c8c8" stroke="#a8a8a8" stroke-width="1.2"/>
+  <ellipse cx="85"  cy="84" rx="11" ry="7" fill="#e2e2e2" stroke="#b0b0b0" stroke-width="1.2"/>
+  <ellipse cx="113" cy="87" rx="11" ry="7" fill="#c8c8c8" stroke="#a8a8a8" stroke-width="1.2"/>
+  <ellipse cx="113" cy="84" rx="11" ry="7" fill="#e2e2e2" stroke="#b0b0b0" stroke-width="1.2"/>
+  <ellipse cx="141" cy="87" rx="11" ry="7" fill="#c8c8c8" stroke="#a8a8a8" stroke-width="1.2"/>
+  <ellipse cx="141" cy="84" rx="11" ry="7" fill="#e2e2e2" stroke="#b0b0b0" stroke-width="1.2"/>
+  <!-- Studs row 1 (back) -->
+  <ellipse cx="66"  cy="75" rx="11" ry="7" fill="#c8c8c8" stroke="#a8a8a8" stroke-width="1.2"/>
+  <ellipse cx="66"  cy="72" rx="11" ry="7" fill="#e2e2e2" stroke="#b0b0b0" stroke-width="1.2"/>
+  <ellipse cx="94"  cy="75" rx="11" ry="7" fill="#c8c8c8" stroke="#a8a8a8" stroke-width="1.2"/>
+  <ellipse cx="94"  cy="72" rx="11" ry="7" fill="#e2e2e2" stroke="#b0b0b0" stroke-width="1.2"/>
+  <ellipse cx="122" cy="75" rx="11" ry="7" fill="#c8c8c8" stroke="#a8a8a8" stroke-width="1.2"/>
+  <ellipse cx="122" cy="72" rx="11" ry="7" fill="#e2e2e2" stroke="#b0b0b0" stroke-width="1.2"/>
+  <ellipse cx="150" cy="75" rx="11" ry="7" fill="#c8c8c8" stroke="#a8a8a8" stroke-width="1.2"/>
+  <ellipse cx="150" cy="72" rx="11" ry="7" fill="#e2e2e2" stroke="#b0b0b0" stroke-width="1.2"/>
+
+  <!-- Left joystick base (on top face, isometric offset) -->
+  <ellipse cx="76" cy="83" rx="16" ry="10" fill="#c05050"/>
+  <!-- Left joystick cap -->
+  <ellipse cx="76" cy="78" rx="14" ry="9"  fill="#e06060"/>
+  <ellipse cx="76" cy="76" rx="10" ry="6"  fill="#e87878"/>
+
+  <!-- Right joystick base -->
+  <ellipse cx="122" cy="79" rx="16" ry="10" fill="#c05050"/>
+  <!-- Right joystick cap -->
+  <ellipse cx="122" cy="74" rx="14" ry="9"  fill="#e06060"/>
+  <ellipse cx="122" cy="72" rx="10" ry="6"  fill="#e87878"/>
+</svg>

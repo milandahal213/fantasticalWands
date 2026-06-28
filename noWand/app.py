@@ -3,32 +3,45 @@ noWand — desktop app.
 Run: python app.py
 """
 
+import io
 import threading
 import tkinter as tk
+from pathlib import Path
 from tkinter import ttk
+
+try:
+    import cairosvg
+    from PIL import Image, ImageTk
+    _SVG_SUPPORT = True
+except ImportError:
+    _SVG_SUPPORT = False
 
 from device_manager import DeviceManager, ScanResult, COLOR_MAP, COLOR_HEX
 from lelib import singleMotor, doubleMotor, colorSensor, controller
 
 # ── Theme ─────────────────────────────────────────────────────────────────────
-BG          = "#0f0f1a"
-BG2         = "#1a1a2e"
-BG3         = "#252540"
-FG          = "#e0e0f0"
-FG_DIM      = "#6060a0"
-ACCENT      = "#5c7cfa"
-ACCENT_DIM  = "#3a4f9e"
-SUCCESS     = "#51cf66"
-DANGER      = "#ff6b6b"
-BORDER      = "#2a2a4a"
-SEL_RING    = "#ffffff"
+BG          = "#f5f0e8"   # warm tan
+BG2         = "#e8e0d0"   # panel background (more contrast)
+BG3         = "#d8cfc2"   # input fields, inner elements
+FG          = "#1a1008"   # near-black for max readability
+FG_DIM      = "#6b5d4e"   # warm mid-tone (was too light)
+ACCENT      = "#1e4f82"   # deeper steel blue (more contrast)
+ACCENT_DIM  = "#163a61"
+SUCCESS     = "#2e6e42"   # darker green
+DANGER      = "#9e2c2c"   # darker red
+BORDER      = "#a89880"   # much darker border (was nearly invisible)
+SEL_RING    = "#1e4f82"
 
 FONT        = "SF Pro Display"
 FONT_MONO   = "SF Pro Mono"
 
+RADIUS      = 10          # corner radius used throughout
+
 POLL_MS     = 100
 
-# Device type icons (unicode glyphs used as placeholder art)
+ICON_SIZE   = 100   # px to render each SVG
+
+# Fallback unicode glyphs when SVG loading fails
 DEVICE_ICON = {
     'Single Motor': '⚙',
     'Double Motor': '⚙⚙',
@@ -36,23 +49,91 @@ DEVICE_ICON = {
     'Controller':   '⊕',
 }
 
+_SVG_FILES = {
+    'Single Motor': 'single_motor.svg',
+    'Double Motor': 'double_motor.svg',
+    'Color Sensor': 'color_sensor.svg',
+    'Controller':   'controller.svg',
+}
+
+# Populated by load_device_icons() at startup; PhotoImage refs kept here to
+# prevent garbage collection.
+DEVICE_IMAGES: dict = {}
+
+
+def load_device_icons():
+    """Render SVG device icons to PhotoImage objects for use in the canvas."""
+    if not _SVG_SUPPORT:
+        print("cairosvg / Pillow not installed — using glyph fallbacks. "
+              "Run: pip install cairosvg pillow")
+        return
+    icon_dir = Path(__file__).parent / "icons"
+    for device_type, filename in _SVG_FILES.items():
+        svg_path = icon_dir / filename
+        if not svg_path.exists():
+            continue
+        try:
+            png = cairosvg.svg2png(
+                url=str(svg_path),
+                output_width=ICON_SIZE,
+                output_height=ICON_SIZE,
+            )
+            img = Image.open(io.BytesIO(png)).convert("RGBA")
+            DEVICE_IMAGES[device_type] = ImageTk.PhotoImage(img)
+        except Exception as e:
+            print(f"Could not load icon {filename}: {e}")
+
 DEVICE_CARD_COLOR = {
-    singleMotor: "#7c5cfc",
-    doubleMotor: "#5c7cfa",
-    colorSensor: "#51cf66",
-    controller:  "#f59f00",
+    singleMotor: "#6a7fa0",
+    doubleMotor: "#3d6b9e",
+    colorSensor: "#4a8c5c",
+    controller:  "#9e7a3d",
 }
 
 
 # ── Utilities ─────────────────────────────────────────────────────────────────
 
-def btn(parent, text, command, bg=ACCENT, fg="white", font_size=12, pad=(14, 8)):
+def _draw_rounded_rect(canvas, x1, y1, x2, y2, r, **kw):
+    """Draw a filled rounded rectangle on a Canvas."""
+    canvas.create_polygon(
+        x1 + r, y1,   x2 - r, y1,
+        x2,     y1,   x2,     y1 + r,
+        x2,     y2 - r, x2,   y2,
+        x2 - r, y2,   x1 + r, y2,
+        x1,     y2,   x1,     y2 - r,
+        x1,     y1 + r, x1,   y1,
+        smooth=True, **kw,
+    )
+
+
+class RoundedPanel(tk.Frame):
+    """A Frame with a rounded-rectangle Canvas backdrop."""
+    def __init__(self, parent, radius=RADIUS, fill=BG2, outline=BORDER, **kw):
+        super().__init__(parent, bg=parent["bg"], **kw)
+        self._radius  = radius
+        self._fill    = fill
+        self._outline = outline
+        self._canvas  = tk.Canvas(self, bg=parent["bg"], bd=0, highlightthickness=0)
+        self._canvas.place(relx=0, rely=0, relwidth=1, relheight=1)
+        self.bind("<Configure>", self._redraw)
+
+    def _redraw(self, _=None):
+        self._canvas.delete("all")
+        w, h = self.winfo_width(), self.winfo_height()
+        r = self._radius
+        _draw_rounded_rect(self._canvas, 1, 1, w - 1, h - 1, r,
+                           fill=self._fill, outline=self._outline)
+        self._canvas.lower("all")
+
+
+def btn(parent, text, command, bg=ACCENT, fg="black", font_size=12, pad=(14, 8)):
     b = tk.Button(
         parent, text=text, command=command,
-        bg=bg, fg=fg, activebackground=fg, activeforeground=bg,
+        bg=bg, fg=fg, activebackground=bg, activeforeground=fg,
         relief="flat", bd=0, cursor="hand2",
         padx=pad[0], pady=pad[1],
         font=(FONT, font_size, "bold"),
+        highlightthickness=0,
     )
     return b
 
@@ -67,9 +148,10 @@ def lbl(parent, text="", fg=FG, size=11, bold=False, anchor="w", **kw):
 
 # ── Device icon widget ────────────────────────────────────────────────────────
 
-ICON_D  = 90    # canvas diameter
-RING_W  = 6     # ring thickness
-SEL_W   = 4     # extra selection ring
+ICON_W  = 130   # card width
+ICON_H  = 120   # card height
+RING_W  = 5     # border thickness
+SEL_W   = 3     # extra selection border
 
 class DeviceIcon(tk.Frame):
     """Circular icon representing a scanned (not yet connected) device."""
@@ -88,40 +170,55 @@ class DeviceIcon(tk.Frame):
             child.bind(seq, func)
 
     def _build(self):
-        # ── Canvas circle ──
+        color = self._result.color_hex
+        badge = self._result.emoji or ''
+        device_type = self._result.device_type
+
+        # ── Colored rectangle card ──
         self._canvas = tk.Canvas(
-            self, width=ICON_D, height=ICON_D,
+            self, width=ICON_W, height=ICON_H,
             bg=BG2, bd=0, highlightthickness=0,
         )
-        self._canvas.pack(pady=(10, 4))
+        self._canvas.pack(pady=(8, 6))
 
-        r = ICON_D // 2
-        ring = RING_W
-        color = self._result.color_hex
+        # colored background rectangle
+        self._rect_id = self._canvas.create_rectangle(
+            RING_W, RING_W, ICON_W - RING_W, ICON_H - RING_W,
+            outline=color, width=RING_W, fill=color,
+        )
 
-        # outer ring
-        self._ring_id = self._canvas.create_oval(
-            2, 2, ICON_D - 2, ICON_D - 2,
-            outline=color, width=ring, fill=BG3,
-        )
-        # glyph
-        glyph = DEVICE_ICON.get(self._result.device_type, '?')
-        self._icon_id = self._canvas.create_text(
-            r, r, text=glyph,
-            fill=color, font=(FONT, 22, "bold"),
-        )
+        # SVG device icon centered in the rectangle
+        img = DEVICE_IMAGES.get(device_type)
+        if img:
+            cx = ICON_W // 2
+            cy = ICON_H // 2
+            self._img_id = self._canvas.create_image(cx, cy, image=img, anchor="center")
+        else:
+            # fallback: show type glyph
+            glyph = DEVICE_ICON.get(device_type, '?')
+            self._img_id = self._canvas.create_text(
+                ICON_W // 2, ICON_H // 2, text=glyph,
+                fill="white", font=(FONT, 28, "bold"),
+            )
+
+        # emoji badge top-left (only when we have the image)
+        if badge and img:
+            self._badge_id = self._canvas.create_text(
+                RING_W + 4, RING_W + 4, text=badge,
+                fill="white", font=(FONT, 14), anchor="nw",
+            )
 
         # ── Labels ──
         serial_text = str(self._result.card_serial) if self._result.card_serial else "—"
-        lbl(self, serial_text, fg=FG, size=11, bold=True,
+        lbl(self, serial_text, fg=FG, size=13, bold=True,
             anchor="center").pack(fill="x", padx=6)
 
         mac_short = self._result.mac[-8:] if self._result.mac else "??"
-        lbl(self, mac_short, fg=FG_DIM, size=9,
-            anchor="center").pack(fill="x", padx=6, pady=(0, 8))
+        lbl(self, mac_short, fg=FG_DIM, size=11,
+            anchor="center").pack(fill="x", padx=6, pady=(0, 4))
 
-        lbl(self, self._result.device_type, fg=FG_DIM, size=9,
-            anchor="center").pack(fill="x", padx=6, pady=(0, 8))
+        lbl(self, self._result.device_type, fg=FG, size=11, bold=True,
+            anchor="center").pack(fill="x", padx=6, pady=(0, 10))
 
         self.bind_all_children("<Button-1>", self._click)
 
@@ -133,11 +230,11 @@ class DeviceIcon(tk.Frame):
     def _draw_state(self):
         color = self._result.color_hex
         if self._selected:
-            self._canvas.itemconfig(self._ring_id, outline=SEL_RING, width=RING_W + SEL_W)
-            self._canvas.itemconfig(self._icon_id, fill=SEL_RING)
+            self._canvas.itemconfig(self._rect_id, outline=FG,
+                                    width=RING_W + SEL_W, fill=color)
         else:
-            self._canvas.itemconfig(self._ring_id, outline=color, width=RING_W)
-            self._canvas.itemconfig(self._icon_id, fill=color)
+            self._canvas.itemconfig(self._rect_id, outline=color,
+                                    width=RING_W, fill=color)
 
     def deselect(self):
         self._selected = False
@@ -157,8 +254,7 @@ class DeviceIcon(tk.Frame):
 class DeviceCard(tk.Frame):
 
     def __init__(self, parent, label, dev, on_disconnect):
-        super().__init__(parent, bg=BG3, highlightthickness=1,
-                         highlightbackground=BORDER)
+        super().__init__(parent, bg=BG, highlightthickness=0)
         self._label  = label
         self._dev    = dev
         self._on_dis = on_disconnect
@@ -168,31 +264,35 @@ class DeviceCard(tk.Frame):
     def _build(self):
         accent = DEVICE_CARD_COLOR.get(type(self._dev), ACCENT)
 
+        panel = RoundedPanel(self, radius=RADIUS, fill=BG2, outline=BORDER)
+        panel.pack(fill="x", pady=(0, 2))
+
         # header
-        hdr = tk.Frame(self, bg=accent)
+        hdr = tk.Frame(panel, bg=accent)
         hdr.pack(fill="x")
         tk.Label(hdr, text=self._label, bg=accent, fg="white",
-                 font=(FONT, 12, "bold"), padx=10, pady=6).pack(side="left")
+                 font=(FONT, 14, "bold"), padx=14, pady=10).pack(side="left")
         tk.Button(hdr, text="✕", command=lambda: self._on_dis(self._label),
                   bg=accent, fg="white", activebackground=DANGER,
-                  relief="flat", bd=0, padx=8, pady=6,
-                  font=(FONT, 11, "bold"), cursor="hand2").pack(side="right")
+                  relief="flat", bd=0, padx=14, pady=10,
+                  font=(FONT, 13, "bold"), cursor="hand2",
+                  highlightthickness=0).pack(side="right")
 
         # telemetry
-        tf = tk.Frame(self, bg=BG3)
-        tf.pack(fill="x", padx=10, pady=6)
+        tf = tk.Frame(panel, bg=BG2)
+        tf.pack(fill="x", padx=12, pady=6)
         for key in self._tele_keys():
             row = tk.Frame(tf, bg=BG3)
             row.pack(fill="x", pady=1)
-            tk.Label(row, text=key, bg=BG3, fg=FG_DIM,
-                     font=(FONT, 9), width=12, anchor="w").pack(side="left")
+            tk.Label(row, text=key, bg=BG2, fg=FG_DIM,
+                     font=(FONT, 12), width=12, anchor="w").pack(side="left")
             var = tk.StringVar(value="—")
-            tk.Label(row, textvariable=var, bg=BG3, fg=FG,
-                     font=(FONT_MONO, 10)).pack(side="left")
+            tk.Label(row, textvariable=var, bg=BG2, fg=FG,
+                     font=(FONT_MONO, 13, "bold")).pack(side="left")
             self._tele[key] = var
 
         # controls
-        self._build_controls()
+        self._build_controls(panel)
 
     def _tele_keys(self):
         if isinstance(self._dev, doubleMotor):
@@ -205,19 +305,19 @@ class DeviceCard(tk.Frame):
             return ["color", "reflection"]
         return []
 
-    def _build_controls(self):
-        cf = tk.Frame(self, bg=BG3)
-        cf.pack(fill="x", padx=10, pady=(0, 10))
+    def _build_controls(self, parent):
+        cf = tk.Frame(parent, bg=BG2)
+        cf.pack(fill="x", padx=12, pady=(0, 12))
 
         if isinstance(self._dev, (singleMotor, doubleMotor)):
             self._spd = tk.IntVar(value=50)
             sr = tk.Frame(cf, bg=BG3)
             sr.pack(fill="x", pady=(0, 6))
-            tk.Label(sr, text="speed", bg=BG3, fg=FG_DIM,
-                     font=(FONT, 9), width=12, anchor="w").pack(side="left")
+            tk.Label(sr, text="speed", bg=BG2, fg=FG_DIM,
+                     font=(FONT, 12), width=12, anchor="w").pack(side="left")
             tk.Scale(sr, from_=-100, to=100, orient="horizontal",
-                     variable=self._spd, bg=BG3, fg=FG,
-                     troughcolor=BORDER, highlightthickness=0,
+                     variable=self._spd, bg=BG2, fg=FG,
+                     troughcolor=BG3, highlightthickness=0,
                      activebackground=ACCENT, length=140).pack(side="left")
 
             br = tk.Frame(cf, bg=BG3)
@@ -230,8 +330,8 @@ class DeviceCard(tk.Frame):
                 btn(br, "Reset heading", self._reset_heading,
                     bg=BG2, font_size=10, pad=(10, 4)).pack(side="left", padx=(4, 0))
         else:
-            tk.Label(cf, text="Read-only", bg=BG3, fg=FG_DIM,
-                     font=(FONT, 9)).pack(anchor="w")
+            tk.Label(cf, text="Read-only", bg=BG2, fg=FG_DIM,
+                     font=(FONT, 12)).pack(anchor="w")
 
     def _run(self):
         try: self._dev.run(self._spd.get())
@@ -269,6 +369,7 @@ class App(tk.Tk):
         self.configure(bg=BG)
         self.state("zoomed")           # full-screen (macOS maximised)
 
+        load_device_icons()
         self._manager    = DeviceManager()
         self._scan_results: list[ScanResult] = []
         self._selected:  set  = set()  # ScanResult objects currently selected
@@ -291,7 +392,7 @@ class App(tk.Tk):
     def _build(self):
         # ── Title ──
         tk.Label(self, text="noWand", bg=BG, fg=ACCENT,
-                 font=(FONT, 28, "bold"), pady=24).pack()
+                 font=(FONT, 36, "bold"), pady=28).pack()
 
         # ── Scan controls ──
         ctrl = tk.Frame(self, bg=BG)
@@ -301,83 +402,85 @@ class App(tk.Tk):
         colors = ["Any color"] + list(COLOR_MAP.keys())
         self._color_var = tk.StringVar(value="Any color")
         color_menu = ttk.Combobox(ctrl, textvariable=self._color_var,
-                                  values=colors, state="readonly", width=14,
-                                  font=(FONT, 12))
-        color_menu.pack(side="left", padx=(0, 10))
+                                  values=colors, state="readonly", width=16,
+                                  font=(FONT, 14))
+        color_menu.pack(side="left", padx=(0, 12))
 
         # serial entry
         self._serial_entry = tk.Entry(
-            ctrl, width=14, bg=BG3, fg=FG, insertbackground=FG,
-            relief="flat", font=(FONT, 12), bd=0,
+            ctrl, width=16, bg=BG3, fg=FG, insertbackground=FG,
+            relief="flat", font=(FONT, 14), bd=0,
         )
         self._serial_entry.insert(0, "Card number")
         self._serial_entry.config(fg=FG_DIM)
         self._serial_entry.bind("<FocusIn>",  self._serial_focus_in)
         self._serial_entry.bind("<FocusOut>", self._serial_focus_out)
-        self._serial_entry.pack(side="left", ipady=6, padx=4)
+        self._serial_entry.pack(side="left", ipady=8, padx=4)
 
-        # style the combobox to match theme
+        # style the combobox and scrollbar to match theme
         style = ttk.Style()
         style.theme_use("default")
         style.configure("TCombobox",
                          fieldbackground=BG3, background=BG3,
                          foreground=FG, selectbackground=ACCENT,
-                         selectforeground="white", borderwidth=0)
+                         selectforeground="white", borderwidth=0,
+                         relief="flat")
+        style.configure("TScrollbar", background=BG3, troughcolor=BG2,
+                         borderwidth=0, arrowcolor=FG_DIM)
 
         # Scan button (centered, below inputs)
         self._scan_btn = btn(self, "SCAN", self._do_scan,
-                             bg=ACCENT, font_size=14, pad=(40, 12))
-        self._scan_btn.pack(pady=(12, 0))
+                             bg=ACCENT, font_size=16, pad=(48, 14))
+        self._scan_btn.pack(pady=(16, 0))
 
         self._status_var = tk.StringVar(value="")
         tk.Label(self, textvariable=self._status_var, bg=BG, fg=FG_DIM,
-                 font=(FONT, 10)).pack(pady=(6, 0))
+                 font=(FONT, 12)).pack(pady=(8, 0))
 
         # ── Scan results area ──
-        results_outer = tk.Frame(self, bg=BG2,
-                                 highlightthickness=1, highlightbackground=BORDER)
+        results_outer = RoundedPanel(self, radius=RADIUS, fill=BG2, outline=BORDER)
         results_outer.pack(fill="x", padx=40, pady=(16, 0))
 
         # results header row
         rh = tk.Frame(results_outer, bg=BG2)
-        rh.pack(fill="x", padx=12, pady=(8, 4))
+        rh.pack(fill="x", padx=16, pady=(12, 4))
         self._results_label = tk.Label(rh, text="Scanned devices",
-                                       bg=BG2, fg=FG_DIM,
-                                       font=(FONT, 10, "bold"))
+                                       bg=BG2, fg=FG,
+                                       font=(FONT, 13, "bold"))
         self._results_label.pack(side="left")
 
         filter_btn = tk.Button(rh, text="⊟  Filter", command=self._toggle_filter,
-                               bg=BG2, fg=FG_DIM, activebackground=BG3,
+                               bg=BG2, fg=FG, activebackground=BG3,
                                relief="flat", bd=0, cursor="hand2",
-                               font=(FONT, 10))
+                               font=(FONT, 13))
         filter_btn.pack(side="right")
 
         # inline filter panel (hidden by default)
-        self._filter_frame = tk.Frame(results_outer, bg=BG3)
+        self._filter_frame = tk.Frame(results_outer, bg=BG3, pady=8)
         fp = self._filter_frame
-        tk.Label(fp, text="Filter color:", bg=BG3, fg=FG_DIM,
-                 font=(FONT, 10)).pack(side="left", padx=(12, 4))
+        tk.Label(fp, text="Filter color:", bg=BG3, fg=FG,
+                 font=(FONT, 13)).pack(side="left", padx=(16, 6))
         filter_colors = ["Any"] + list(COLOR_MAP.keys())
         self._filter_color_var = tk.StringVar(value="Any")
         ttk.Combobox(fp, textvariable=self._filter_color_var,
                      values=filter_colors, state="readonly",
-                     width=12, font=(FONT, 10)).pack(side="left", padx=(0, 12))
-        tk.Label(fp, text="Serial:", bg=BG3, fg=FG_DIM,
-                 font=(FONT, 10)).pack(side="left", padx=(0, 4))
+                     width=13, font=(FONT, 13)).pack(side="left", padx=(0, 16))
+        tk.Label(fp, text="Serial:", bg=BG3, fg=FG,
+                 font=(FONT, 13)).pack(side="left", padx=(0, 6))
         self._filter_serial_var = tk.StringVar()
         tk.Entry(fp, textvariable=self._filter_serial_var,
                  width=10, bg=BG2, fg=FG, insertbackground=FG,
-                 relief="flat", font=(FONT, 10)).pack(side="left", padx=(0, 12), ipady=4)
+                 relief="flat", font=(FONT, 13)).pack(side="left", padx=(0, 16), ipady=6)
         btn(fp, "Apply", self._apply_filter, bg=ACCENT,
-            font_size=9, pad=(10, 4)).pack(side="left")
+            font_size=12, pad=(14, 6)).pack(side="left")
         self._filter_frame.pack_forget()
 
         # horizontal scrollable icon row
         icon_canvas_frame = tk.Frame(results_outer, bg=BG2)
-        icon_canvas_frame.pack(fill="x", padx=12, pady=8)
+        icon_canvas_frame.pack(fill="x", padx=16, pady=10)
 
         self._icon_canvas = tk.Canvas(icon_canvas_frame, bg=BG2,
-                                      height=190, bd=0, highlightthickness=0)
+                                      height=230, bd=0, highlightthickness=0)
         hscroll = ttk.Scrollbar(icon_canvas_frame, orient="horizontal",
                                  command=self._icon_canvas.xview)
         self._icon_canvas.configure(xscrollcommand=hscroll.set)
@@ -393,24 +496,24 @@ class App(tk.Tk):
         # empty state label
         self._empty_lbl = tk.Label(
             self._icon_row, text="Press SCAN to discover nearby LEGO devices",
-            bg=BG2, fg=FG_DIM, font=(FONT, 11), pady=60,
+            bg=BG2, fg=FG_DIM, font=(FONT, 13), pady=70,
         )
         self._empty_lbl.pack()
 
         # ── Connect button ──
         self._connect_btn = btn(self, "CONNECT SELECTED", self._do_connect,
-                                bg=SUCCESS, fg="black", font_size=14, pad=(40, 12))
+                                bg=SUCCESS, fg="black", font_size=16, pad=(48, 14))
         self._connect_btn.pack(pady=16)
         self._connect_btn.config(state="disabled",
                                  bg=BG3, fg=FG_DIM, cursor="arrow")
 
         # ── Connected devices area ──
-        sep = tk.Frame(self, bg=BORDER, height=1)
-        sep.pack(fill="x", padx=40)
+        sep = tk.Frame(self, bg=BORDER, height=2)
+        sep.pack(fill="x", padx=40, pady=(12, 0))
 
-        self._cards_label = tk.Label(self, text="", bg=BG, fg=FG_DIM,
-                                     font=(FONT, 10, "bold"))
-        self._cards_label.pack(anchor="w", padx=40, pady=(8, 0))
+        self._cards_label = tk.Label(self, text="", bg=BG, fg=FG,
+                                     font=(FONT, 14, "bold"))
+        self._cards_label.pack(anchor="w", padx=48, pady=(10, 0))
 
         cards_outer = tk.Frame(self, bg=BG)
         cards_outer.pack(fill="both", expand=True, padx=40, pady=(4, 16))
@@ -532,7 +635,7 @@ class App(tk.Tk):
         else:
             self._connect_btn.config(
                 state="disabled", cursor="arrow",
-                bg=BG3, fg=FG_DIM,
+                bg=BG2, fg=FG_DIM,
                 text="CONNECT SELECTED",
             )
 

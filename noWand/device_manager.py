@@ -63,29 +63,77 @@ class ScanResult:
         self.ble_result      = ble_result   # Bleak BLEDevice
         self.device_type     = DEVICE_LABELS[cls]
         self.mac             = getattr(ble_result, 'address', '??:??:??:??:??:??')
-        self.card_color_name = card_color_name  # str or None
-        self.color_hex       = COLOR_HEX.get(card_color_name, COLOR_HEX[None])
 
-        # Try to extract card serial from BLE manufacturer data
-        self.card_serial = _extract_serial(ble_result)
+        # Parse color, serial, and emoji from the device name
+        ble_color, ble_serial, ble_emoji = _parse_device_name(ble_result)
+        self.card_color_name = ble_color if ble_color is not None else card_color_name
+        self.color_hex       = COLOR_HEX.get(self.card_color_name, COLOR_HEX[None])
+        self.card_serial     = ble_serial
+        self.emoji           = ble_emoji
 
     def __repr__(self):
         return (f"ScanResult({self.device_type}, serial={self.card_serial}, "
                 f"color={self.card_color_name}, mac={self.mac})")
 
 
+import re
+
+# Emoji in device name → color name
+_EMOJI_TO_COLOR = {
+    '🟥': 'red',
+    '🟨': 'yellow',
+    '🟦': 'blue',
+    '🩵': 'teal',
+    '🟩': 'green',
+    '🟪': 'purple',
+    '⬜': 'white',
+    '⬜️': 'white',
+    '🩷': 'magenta',
+    '🟧': 'orange',
+    '🔵': 'azure',
+}
+
+
+def _parse_device_name(ble_result):
+    """Parse color name, serial, and emoji from the LEGO device BLE name.
+
+    Name format: '{emoji} {serial} {device_type}'
+              or '{emoji}    {device_type}'  (no serial when card not paired)
+    Returns (color_name, serial, emoji) — any may be None if not found.
+    """
+    name = getattr(ble_result, 'name', '') or ''
+
+    # Extract first emoji character
+    emoji = None
+    color_name = None
+    for em, col in _EMOJI_TO_COLOR.items():
+        if name.startswith(em):
+            emoji = em
+            color_name = col
+            break
+
+    # Extract serial: first run of digits in the name
+    serial = None
+    m = re.search(r'\d+', name)
+    if m:
+        serial = int(m.group())
+
+    return color_name, serial, emoji
+
+
 def _extract_serial(ble_result) -> int | None:
-    """Best-effort extraction of card serial from BLE advertisement metadata."""
-    try:
-        mfr = ble_result.metadata.get('manufacturer_data', {})
-        for key, data in mfr.items():
-            if len(data) >= 6:
-                serial = int.from_bytes(data[4:6], 'little')
-                if serial:
-                    return serial
-    except Exception:
-        pass
-    return None
+    _, serial, _ = _parse_device_name(ble_result)
+    return serial
+
+
+def _extract_color_name(ble_result) -> str | None:
+    color_name, _, _ = _parse_device_name(ble_result)
+    return color_name
+
+
+def _extract_emoji(ble_result) -> str | None:
+    _, _, emoji = _parse_device_name(ble_result)
+    return emoji
 
 
 class DeviceManager:
