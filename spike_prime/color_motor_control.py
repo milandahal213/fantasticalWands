@@ -1,8 +1,15 @@
 """
-SPIKE Prime — control Single Motor speed with Color Sensor reflected light.
+Control Single Motor speed with Color Sensor reflected light.
 
 Brighter surface → faster motor
 Darker surface   → slower motor
+
+!!! DOES NOT WORK ON SPIKE PRIME !!!
+This needs TWO simultaneous BLE connections (motor hub + sensor hub).
+SPIKE Prime only supports ONE central connection at a time, so the second
+connect fails. This script is kept for the ESP32-C6, which handles multiple
+connections — run it from ../lego_education/. On SPIKE Prime, use a single
+tech element instead (see color_sensor_read.py and README.md).
 """
 
 import time

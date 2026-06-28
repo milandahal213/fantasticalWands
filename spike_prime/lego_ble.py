@@ -1,32 +1,31 @@
 """
-MicroPython BLE driver for LEGO Education devices (ESP32-C6).
+MicroPython BLE driver for LEGO Education tech elements (SPIKE Prime build).
 
 Uses only the standard 'bluetooth' module — no aioble or async required.
-Supports multiple simultaneous connections (one per LEGO hub).
+
+IMPORTANT — one connection at a time on SPIKE Prime:
+    The SPIKE Prime firmware only supports ONE simultaneous BLE central
+    connection to these tech elements. A second connect returns a phantom
+    handle whose GATT calls fail. So connect to ONE tech element per hub.
+    (For multiple tech elements at once, use the ESP32-C6 build in
+    ../lego_education/, which handles several connections. See README.md.)
 
 Usage:
-    from lego_ble import LegoDevice, COLOR_RED, MOTOR_BITS_LEFT
+    from lego_ble import LegoDevice, COLOR_SENSOR_NOTIFICATION
 
-    motor  = LegoDevice()
-    sensor = LegoDevice()
-
-    motor.scan_and_connect(name_filter="Single Motor")
-    sensor.scan_and_connect(name_filter="Color Sensor")
-
-    motor.program_start()
+    sensor = LegoDevice(notification_callback=my_cb)
+    sensor.scan_and_connect()        # connects to one tech element
     sensor.program_start()
     sensor.enable_notifications(50)
+    ...
+    sensor.disconnect()
 """
 
 import bluetooth
 import struct
 import time
 
-# Bump this string whenever lego_ble.py changes. It prints at import time so
-# you can confirm the SPIKE Prime is running the file you think it is. If the
-# printed version doesn't match, re-upload lego_ble.py to the device.
-__version__ = "spike-multiconnect-7"
-print("[lego_ble] loaded version:", __version__)
+__version__ = "spike-1.0"
 
 # ── UUIDs ─────────────────────────────────────────────────────────────────────
 _SVC_UUID   = bluetooth.UUID("0000FD02-0000-1000-8000-00805F9B34FB")
