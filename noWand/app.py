@@ -464,6 +464,24 @@ class DeviceCard(tk.Frame):
 
 # ── Behavior UI ───────────────────────────────────────────────────────────────
 
+# Color int (from legoeducation) → behavior index (0-based): index = color_int - 1
+# 1=Red 2=Yellow 3=Blue 4=Teal 5=Green 6=Purple 7=White 8=Magenta 9=Orange 10=Azure
+_CARD_COLOR_NAMES = {
+    1: ('Red',     '#de1a21'),
+    2: ('Yellow',  '#ffd400'),
+    3: ('Blue',    '#006cb8'),
+    4: ('Teal',    '#1de9b6'),
+    5: ('Green',   '#61a836'),
+    6: ('Purple',  '#4b2f91'),
+    7: ('White',   '#f5f5f5'),
+    8: ('Magenta', '#e4599e'),
+    9: ('Orange',  '#f57d20'),
+    10:('Azure',   '#78bfea'),
+}
+
+CARD_POLL_MS = 80   # how often to check for card taps
+
+
 def _behavior_available(mod, devices: dict) -> bool:
     """True if all required device types are present in devices."""
     return all(
@@ -482,10 +500,11 @@ class BehaviorCard(tk.Frame):
     _UNAVAIL_BG  = BG3
     _UNAVAIL_FG  = FG_DIM
 
-    def __init__(self, parent, mod, on_click):
+    def __init__(self, parent, mod, index, on_click):
         super().__init__(parent, bg=BG2, cursor="hand2",
                          highlightthickness=2, highlightbackground=BORDER)
         self._mod      = mod
+        self._index    = index
         self._on_click = on_click
         self._active   = False
         self._avail    = True
@@ -508,19 +527,28 @@ class BehaviorCard(tk.Frame):
 
         # required device chips
         chips = tk.Frame(self, bg=BG2)
-        chips.pack(fill="x", padx=10, pady=(6, 8))
+        chips.pack(fill="x", padx=10, pady=(6, 4))
         for cls in self._mod.REQUIRED:
-            name = cls.__name__
-            # prettify class names
             pretty = {
                 "singleMotor": "Single Motor",
                 "doubleMotor": "Double Motor",
                 "colorSensor": "Color Sensor",
                 "controller":  "Controller",
-            }.get(name, name)
+            }.get(cls.__name__, cls.__name__)
             tk.Label(chips, text=pretty, bg=BG3, fg=FG_DIM,
                      font=(FONT, 9), padx=5, pady=2,
                      relief="flat").pack(side="left", padx=(0, 4))
+
+        # card trigger chip — color int = behavior index + 1
+        card_info = _CARD_COLOR_NAMES.get(self._index + 1)
+        if card_info:
+            color_name, hex_col = card_info
+            trigger = tk.Frame(self, bg=BG2)
+            trigger.pack(fill="x", padx=10, pady=(2, 8))
+            tk.Frame(trigger, bg=hex_col, width=12, height=12).pack(
+                side="left", padx=(0, 5))
+            tk.Label(trigger, text=f"{color_name} card", bg=BG2, fg=FG_DIM,
+                     font=(FONT, 9)).pack(side="left")
 
     def _click(self, _=None):
         if self._avail:
@@ -604,8 +632,9 @@ class BehaviorPanel(tk.Frame):
         start   = self._page * self.PER_PAGE
         page    = self._behaviors[start: start + self.PER_PAGE]
 
-        for mod in page:
-            card = BehaviorCard(self._card_row, mod, self._on_card_click)
+        for i, mod in enumerate(page):
+            global_index = start + i
+            card = BehaviorCard(self._card_row, mod, global_index, self._on_card_click)
             card.pack(side="left", padx=(0, 10), pady=4, fill="y")
             card.set_available(_behavior_available(mod, devices))
             card.set_active(mod is self._active_mod)
@@ -617,7 +646,6 @@ class BehaviorPanel(tk.Frame):
 
     def _on_card_click(self, mod):
         if self._active_mod is mod:
-            # toggle off
             mod.stop()
             self._active_mod = None
         else:
@@ -626,6 +654,18 @@ class BehaviorPanel(tk.Frame):
             self._active_mod = mod
             mod.start(self._get_devices())
         self._render_page()
+
+    def activate_by_index(self, index: int):
+        """Activate the behavior at the given 0-based index (from a card tap).
+        Tapping the same card again deactivates the current behavior."""
+        if index < 0 or index >= len(self._behaviors):
+            return
+        mod = self._behaviors[index]
+        if not _behavior_available(mod, self._get_devices()):
+            return
+        # jump to the page containing this behavior
+        self._page = index // self.PER_PAGE
+        self._on_card_click(mod)
 
     def refresh(self):
         """Call after devices connect/disconnect to update availability and stop
@@ -668,6 +708,7 @@ class App(tk.Tk):
 
         self._build()
         self.after(POLL_MS, self._poll_telemetry)
+        self.after(CARD_POLL_MS, self._poll_cards)
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
     # ── Layout ────────────────────────────────────────────────────────────────
@@ -1026,6 +1067,18 @@ class App(tk.Tk):
             if label in self._cards:
                 self._cards[label].update_telemetry(values)
         self.after(POLL_MS, self._poll_telemetry)
+
+    def _poll_cards(self):
+        for dev in self._manager.devices.values():
+            try:
+                if dev.card_tapped():
+                    color_int = dev.scanned_card.color
+                    if color_int and color_int > 0:
+                        self._behavior_panel.activate_by_index(color_int - 1)
+                    break   # one tap per poll cycle is enough
+            except Exception:
+                pass
+        self.after(CARD_POLL_MS, self._poll_cards)
 
     # ── Helpers ───────────────────────────────────────────────────────────────
 
