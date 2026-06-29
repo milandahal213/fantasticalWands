@@ -46,6 +46,30 @@
       <p class="hint">Click a behavior to toggle it, or tap its colored card on any device to switch.</p>
       <div id="behaviors" class="behavior-row"></div>
     </section>
+
+    <section class="section custom-section">
+      <h2 class="section-title">Custom behavior</h2>
+      <p class="hint">
+        Edit the code below and click <strong>Run custom code</strong> to try it live.
+        Errors and your <code>print()</code> output appear in the console.
+      </p>
+
+      <div class="custom-toolbar">
+        <div id="custom-card" class="behavior-card custom-card">
+          <div class="behavior-name">▶ Run custom code</div>
+          <div class="behavior-desc">Compile &amp; run the editor below · click again to stop</div>
+        </div>
+        <button id="reset-template" class="reset-btn">Reset to template</button>
+      </div>
+
+      <div class="editor-wrap">
+        <textarea id="code-editor" spellcheck="false" autocomplete="off"
+                  autocapitalize="off" autocorrect="off"></textarea>
+      </div>
+
+      <div class="console-head">Console</div>
+      <pre id="code-console" class="code-console"></pre>
+    </section>
   </main>
 
   <!-- App entry. Helper modules are mounted via pyscript.toml [files]. -->

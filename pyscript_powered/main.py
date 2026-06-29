@@ -5,6 +5,8 @@ Builds the UI in the DOM, drives Web Bluetooth connections, streams telemetry,
 and runs card-selectable behaviors — all in the browser, no install.
 """
 import asyncio
+import sys
+import traceback
 
 from js import document, setInterval, console
 from pyodide.ffi import create_proxy
@@ -12,6 +14,7 @@ from pyodide.ffi import create_proxy
 import lego_ble as L
 import ble
 import behaviors as behavior_pkg
+from behaviors.util import find, clamp
 
 # keep proxies alive
 _proxies = []
@@ -19,6 +22,95 @@ _proxies = []
 TELEMETRY_MS = 120
 BEHAVIOR_MS = 60
 BEHAVIORS_PER_PAGE = 4
+
+# Starter code shown in the editor — a complete, working behavior so people can
+# tweak rather than start from a blank page.
+CODE_TEMPLATE = '''\
+# Write a behavior! tick(devices) runs ~16 times a second while it's active.
+#
+# Helpers available to you:
+#   find(devices, kind)   -> the connected device of that kind, or None
+#   clamp(value)          -> keeps a number within -100..100
+#   log(...)              -> print a line to the console below
+#
+# Device kinds: "single_motor", "double_motor", "color_sensor", "controller"
+# Device methods: .run(speed)  .stop()  .move_tank(left, right)  .beep()
+# Telemetry: .position .speed .left .right .color .color_name .reflection ...
+
+NAME = "My Custom Behavior"
+REQUIRED = []   # optional, e.g. ["controller", "double_motor"]
+
+
+def on_start(devices):
+    log("started with", len(devices), "device(s) connected")
+
+
+def tick(devices):
+    # Example: spin a single motor, or drive with a controller if present.
+    ctrl = find(devices, "controller")
+    motor = find(devices, "double_motor")
+    if ctrl and motor:
+        motor.move_tank(ctrl.left or 0, ctrl.right or 0)
+        return
+
+    single = find(devices, "single_motor")
+    if single:
+        single.run(50)
+
+
+def on_stop(devices):
+    for d in devices:
+        d.stop()
+'''
+
+
+class CustomBehavior:
+    """A behavior compiled at runtime from user code in the editor.
+
+    Quacks like a built-in behavior module (NAME / REQUIRED / tick / on_start /
+    on_stop) so the rest of the app treats it identically.
+    """
+
+    def __init__(self, app):
+        self._app = app
+        self.NAME = "Custom Code"
+        self.REQUIRED = []
+        self._tick = None
+        self._on_start = None
+        self._on_stop = None
+
+    def compile(self, source):
+        """Exec the user's source in a fresh namespace and extract the hooks.
+
+        Raises on syntax/compile errors or if no tick() is defined.
+        """
+        ns = {
+            "find": find,
+            "clamp": clamp,
+            "log": self._app.console_log,
+            "print": lambda *a, **k: self._app.console_log(" ".join(str(x) for x in a)),
+        }
+        exec(source, ns)  # noqa: S102 — user's own code, their own browser
+        tick = ns.get("tick")
+        if not callable(tick):
+            raise ValueError("Your code must define a function:  def tick(devices): ...")
+        self._tick = tick
+        self._on_start = ns.get("on_start")
+        self._on_stop = ns.get("on_stop")
+        self.NAME = ns.get("NAME", "Custom Code")
+        req = ns.get("REQUIRED", [])
+        self.REQUIRED = list(req) if isinstance(req, (list, tuple)) else []
+
+    def on_start(self, devices):
+        if self._on_start:
+            self._on_start(devices)
+
+    def tick(self, devices):
+        self._tick(devices)
+
+    def on_stop(self, devices):
+        if self._on_stop:
+            self._on_stop(devices)
 
 
 # ── small DOM helpers ────────────────────────────────────────────────────────
@@ -62,14 +154,16 @@ class App:
     def __init__(self):
         self.devices = {}        # label -> {dev, card_el, tele:{key:el}}
         self.behaviors = behavior_pkg.load_all()
-        self.active_behavior = None   # module or None
+        self.active_behavior = None   # module / CustomBehavior or None
         self.behavior_cards = []      # list of {mod, el, index}
         self.page = 0
+        self.custom = CustomBehavior(self)
 
     # ── lifecycle ──
     def start(self):
         self._render_behaviors()
         self._update_empty_state()
+        self._setup_editor()
 
         add_btn = byid("add-device")
         on(add_btn, "click", lambda e: asyncio.ensure_future(self._add_device()))
@@ -90,6 +184,88 @@ class App:
         setInterval(_proxies[-1], TELEMETRY_MS)
         _proxies.append(create_proxy(self._behavior_tick))
         setInterval(_proxies[-1], BEHAVIOR_MS)
+
+    # ── custom-code editor ──
+    def _setup_editor(self):
+        editor = byid("code-editor")
+        editor.value = CODE_TEMPLATE
+
+        # Tab inserts spaces instead of moving focus.
+        def _tab(evt):
+            if evt.key == "Tab":
+                evt.preventDefault()
+                start = editor.selectionStart
+                end = editor.selectionEnd
+                val = editor.value
+                editor.value = val[:start] + "    " + val[end:]
+                editor.selectionStart = editor.selectionEnd = start + 4
+        on(editor, "keydown", _tab)
+
+        on(byid("custom-card"), "click", lambda e: self._run_custom())
+        on(byid("reset-template"), "click", lambda e: self._reset_template())
+        self.console_log("Console ready. Edit the code and click “Run custom code”.")
+
+    def console_log(self, *args, error=False):
+        line = el("div", "console-line error" if error else "console-line",
+                  text=" ".join(str(a) for a in args))
+        con = byid("code-console")
+        con.appendChild(line)
+        con.scrollTop = con.scrollHeight
+
+    def _user_error(self):
+        """Format the current exception showing only the user's code frames,
+        hiding noise from main.py / the exec machinery."""
+        etype, evalue, tb = sys.exc_info()
+        if isinstance(evalue, SyntaxError):
+            return "".join(traceback.format_exception_only(etype, evalue)).rstrip()
+        frames = [f for f in traceback.extract_tb(tb) if f.filename == "<string>"]
+        out = []
+        if frames:
+            out.append("Traceback (most recent call last):\n")
+            out.extend(traceback.format_list(frames))
+        out.extend(traceback.format_exception_only(etype, evalue))
+        return "".join(out).rstrip()
+
+    def _console_clear(self):
+        byid("code-console").innerHTML = ""
+
+    def _reset_template(self):
+        byid("code-editor").value = CODE_TEMPLATE
+        self._console_clear()
+        self.console_log("Reset to template.")
+
+    def _run_custom(self):
+        # toggle off if it's already running
+        if self.active_behavior is self.custom:
+            self._deactivate()
+            self.console_log("— stopped —")
+            return
+
+        self._console_clear()
+        source = byid("code-editor").value
+        try:
+            self.custom.compile(source)
+        except Exception:
+            self.console_log(traceback.format_exc(), error=True)
+            self.console_log("— not started (fix the error above) —", error=True)
+            return
+
+        self._deactivate()                 # stop any built-in behavior first
+        self.active_behavior = self.custom
+        self.console_log(f"Running “{self.custom.NAME}”…")
+        try:
+            self.custom.on_start(self._device_list())
+        except Exception:
+            self.console_log(traceback.format_exc(), error=True)
+            self._deactivate()
+            return
+        self._refresh_behavior_availability()
+        self._refresh_custom_card()
+
+    def _refresh_custom_card(self):
+        card = byid("custom-card")
+        if card:
+            card.classList.toggle("active", self.active_behavior is self.custom)
 
     # ── status helper ──
     def _set_status(self, msg, warn=False):
@@ -335,10 +511,15 @@ class App:
         if self.active_behavior and hasattr(self.active_behavior, "on_stop"):
             try:
                 self.active_behavior.on_stop(self._device_list())
-            except Exception as e:
-                console.log("behavior on_stop error:", repr(e))
+            except Exception:
+                # custom code's on_stop errors go to the in-page console
+                if self.active_behavior is self.custom:
+                    self.console_log(traceback.format_exc(), error=True)
+                else:
+                    console.log("behavior on_stop error:", traceback.format_exc())
         self.active_behavior = None
         self._refresh_behavior_availability()
+        self._refresh_custom_card()
 
     def _activate_by_card_color(self, color_int):
         idx = color_int - 1
@@ -353,12 +534,19 @@ class App:
         self._toggle(mod)
 
     def _behavior_tick(self, *_):
-        if not self.active_behavior:
+        ab = self.active_behavior
+        if not ab:
             return
         try:
-            self.active_behavior.tick(self._device_list())
-        except Exception as e:
-            console.log("behavior tick error:", repr(e))
+            ab.tick(self._device_list())
+        except Exception:
+            if ab is self.custom:
+                # surface the error to the user and stop, so it doesn't spam
+                self.console_log(traceback.format_exc(), error=True)
+                self.console_log("— stopped (fix the error and run again) —", error=True)
+                self._deactivate()
+            else:
+                console.log("behavior tick error:", traceback.format_exc())
 
     def _device_list(self):
         return [e["dev"] for e in self.devices.values()]
