@@ -203,7 +203,8 @@ class DeviceManager:
         """Connect a single ScanResult and register it. Returns (label, dev)."""
         label = self._unique_label(sr.device_type)
         sr.dev.connect(device=sr.ble_result)
-        sr.dev.device_notification_request(100)
+        delay = 50
+        sr.dev.device_notification_request(delay)
         self.devices[label] = sr.dev
         return label, sr.dev
 
@@ -288,8 +289,11 @@ def _read_device(dev) -> dict:
             4: 'teal',  5: 'green',  6: 'purple',  7: 'white',
             8: 'magenta', 9: 'orange', 10: 'azure',
         }
+        import math
+        raw_color = dev.sensor.color
+        raw_ref   = dev.sensor.reflection
         return {
-            'color':      color_names.get(dev.sensor.color, '?'),
-            'reflection': dev.sensor.reflection,
+            'color':      color_names.get(int(raw_color), '?') if not math.isnan(raw_color) else '…',
+            'reflection': raw_ref if not math.isnan(raw_ref) else None,
         }
     return {}

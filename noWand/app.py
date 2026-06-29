@@ -454,7 +454,12 @@ class DeviceCard(tk.Frame):
         for ui_key, data_key in mapping.items():
             if ui_key in self._tele and data_key in values:
                 v = values[data_key]
-                self._tele[ui_key].set(f"{v:.1f}" if isinstance(v, float) else str(v))
+                if v is None:
+                    self._tele[ui_key].set("…")
+                elif isinstance(v, float):
+                    self._tele[ui_key].set(f"{v:.1f}")
+                else:
+                    self._tele[ui_key].set(str(v))
 
 
 # ── Behavior UI ───────────────────────────────────────────────────────────────
