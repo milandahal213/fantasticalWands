@@ -246,7 +246,7 @@ class App:
         try:
             self.custom.compile(source)
         except Exception:
-            self.console_log(traceback.format_exc(), error=True)
+            self.console_log(self._user_error(), error=True)
             self.console_log("— not started (fix the error above) —", error=True)
             return
 
@@ -256,7 +256,7 @@ class App:
         try:
             self.custom.on_start(self._device_list())
         except Exception:
-            self.console_log(traceback.format_exc(), error=True)
+            self.console_log(self._user_error(), error=True)
             self._deactivate()
             return
         self._refresh_behavior_availability()
@@ -514,7 +514,7 @@ class App:
             except Exception:
                 # custom code's on_stop errors go to the in-page console
                 if self.active_behavior is self.custom:
-                    self.console_log(traceback.format_exc(), error=True)
+                    self.console_log(self._user_error(), error=True)
                 else:
                     console.log("behavior on_stop error:", traceback.format_exc())
         self.active_behavior = None
@@ -542,7 +542,7 @@ class App:
         except Exception:
             if ab is self.custom:
                 # surface the error to the user and stop, so it doesn't spam
-                self.console_log(traceback.format_exc(), error=True)
+                self.console_log(self._user_error(), error=True)
                 self.console_log("— stopped (fix the error and run again) —", error=True)
                 self._deactivate()
             else:
