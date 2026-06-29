@@ -199,16 +199,17 @@ class DeviceManager:
 
     # ── Connecting ────────────────────────────────────────────────────────────
 
+    def connect_one(self, sr) -> tuple:
+        """Connect a single ScanResult and register it. Returns (label, dev)."""
+        label = self._unique_label(sr.device_type)
+        sr.dev.connect(device=sr.ble_result)
+        sr.dev.device_notification_request(100)
+        self.devices[label] = sr.dev
+        return label, sr.dev
+
     def connect_results(self, results: list) -> list:
         """Connect a list of ScanResult objects and register them."""
-        connected = []
-        for sr in results:
-            label = self._unique_label(sr.device_type)
-            sr.dev.connect(device=sr.ble_result)
-            sr.dev.device_notification_request(100)
-            self.devices[label] = sr.dev
-            connected.append((label, sr.dev))
-        return connected
+        return [self.connect_one(sr) for sr in results]
 
     def scan_and_connect(self, card_serial: int | None = None,
                          card_color: str | None = None) -> list:
