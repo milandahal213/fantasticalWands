@@ -1,0 +1,15 @@
+# PyScript configuration.
+# [files] mounts our local Python modules into the in-browser virtual filesystem
+# so `import lego_ble`, `import ble`, and `import behaviors.*` work.
+# (Icons are loaded by the browser via <img src> and don't need to be listed.)
+
+[files]
+"./lego_ble.py" = "./lego_ble.py"
+"./ble.py" = "./ble.py"
+"./behaviors/__init__.py" = "./behaviors/__init__.py"
+"./behaviors/util.py" = "./behaviors/util.py"
+"./behaviors/behavior1.py" = "./behaviors/behavior1.py"
+"./behaviors/behavior2.py" = "./behaviors/behavior2.py"
+"./behaviors/behavior3.py" = "./behaviors/behavior3.py"
+"./behaviors/behavior4.py" = "./behaviors/behavior4.py"
+"./behaviors/behavior5.py" = "./behaviors/behavior5.py"
