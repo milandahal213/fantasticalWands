@@ -1,0 +1,4 @@
+legoeducation>=1.0.5
+bleak>=3.0.1
+cairosvg>=2.9.0
+pillow>=12.2.0
