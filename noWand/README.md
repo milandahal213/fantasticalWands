@@ -2,6 +2,8 @@
 
 A Python desktop app for connecting to and controlling LEGO Education hardware over Bluetooth Low Energy (BLE). Scan for nearby devices, connect them, monitor telemetry, drive motors, and run pre-built multi-device behaviors — all from a single window.
 
+Works on **macOS, Windows, and Linux**.
+
 ---
 
 ## What it does
@@ -26,40 +28,76 @@ A Python desktop app for connecting to and controlling LEGO Education hardware o
 
 ## Requirements
 
-- Python 3.12 or newer (tested on 3.14)
-- tkinter (usually bundled with Python — see Troubleshooting if missing)
-- libcairo system library (for SVG icons — app runs without it, icons fall back to text labels)
-- LEGO Education BLE hardware: Single Motor, Double Motor, Color Sensor, or Controller
+- **Python 3.12 or newer** (tested on 3.14). On Windows and macOS, install it from
+  [python.org](https://www.python.org/downloads/) — that build includes tkinter.
+- **tkinter** — bundled with the python.org installer (Windows/macOS) and most Linux
+  distros (see Troubleshooting if it's missing).
+- **A Bluetooth adapter:** Windows 10/11, macOS, or Linux with BlueZ.
+- **libcairo** (optional) — used for the SVG device icons. The app runs fine without
+  it; icons just fall back to text labels. See Troubleshooting for how to add it.
+- **LEGO Education BLE hardware:** Single Motor, Double Motor, Color Sensor, or Controller.
 
 ---
 
 ## Installation
 
-### 1. Clone the repo
+### 1. Get the code
 
 ```bash
-git clone https://github.com/fantasticalWands/noWand.git
-cd noWand
+git clone https://github.com/milandahal213/fantasticalWands.git
+cd fantasticalWands/noWand
 ```
 
 ### 2. Run the installer
+
+The installer finds a compatible Python, checks tkinter, creates a `.venv`, installs
+the dependencies, verifies SVG rendering, and offers to launch the app.
+
+**Windows** (PowerShell):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File install.ps1
+```
+
+**macOS / Linux** (Terminal):
 
 ```bash
 bash install.sh
 ```
 
-The installer:
-- Finds a compatible Python 3.12+ interpreter
-- Checks that tkinter is available
-- Checks for libcairo and warns if it is missing
-- Creates a `.venv` virtual environment
-- Installs all Python dependencies from `requirements.txt`
-- Runs a real cairosvg render test to confirm icons will work
-- Offers to launch the app immediately
+### 3. Launch the app (any time after install)
 
-### 3. Launch the app
+**Windows:**
+
+```powershell
+.venv\Scripts\python app.py
+```
+
+**macOS / Linux:**
 
 ```bash
+.venv/bin/python app.py
+```
+
+---
+
+### Manual install (works on any OS)
+
+If you'd rather not use the installer script:
+
+**Windows (PowerShell):**
+
+```powershell
+py -3 -m venv .venv
+.venv\Scripts\python -m pip install -r requirements.txt
+.venv\Scripts\python app.py
+```
+
+**macOS / Linux:**
+
+```bash
+python3 -m venv .venv
+.venv/bin/python -m pip install -r requirements.txt
 .venv/bin/python app.py
 ```
 
@@ -78,24 +116,29 @@ The installer:
 
 ## Troubleshooting
 
-### libcairo missing — icons don't appear
+### Icons don't appear (libcairo / Cairo missing)
 
-`pip install cairosvg` succeeds silently even when libcairo is not installed, so the app starts but shows no icons. The app still works; icons fall back to text labels.
+`pip install cairosvg` succeeds even when the underlying Cairo graphics library
+isn't present, so the app starts but shows no icons. The app still works — icons
+fall back to text labels. To get the icons, install Cairo:
 
-Install libcairo for your OS:
+**Windows** — Cairo ships with the GTK3 runtime. Install the latest
+`gtk3-runtime-…-win64.exe` from the
+[GTK for Windows Runtime Environment Installer](https://github.com/tschoonj/GTK-for-Windows-Runtime-Environment-Installer/releases),
+then reopen PowerShell and re-run the installer.
+
+**macOS** (requires [Homebrew](https://brew.sh)):
 
 ```bash
-# macOS (requires Homebrew)
 brew install cairo
+```
 
-# Ubuntu / Debian
-sudo apt install libcairo2
+**Linux:**
 
-# Fedora / RHEL
-sudo dnf install cairo
-
-# Arch
-sudo pacman -S cairo
+```bash
+sudo apt install libcairo2        # Ubuntu / Debian
+sudo dnf install cairo            # Fedora / RHEL
+sudo pacman -S cairo              # Arch
 ```
 
 Then re-run the installer to verify the fix.
@@ -104,43 +147,59 @@ Then re-run the installer to verify the fix.
 
 ### tkinter not found
 
-Homebrew Python on macOS strips tkinter. The official Python installer from python.org includes it.
+- **Windows / macOS:** reinstall Python from
+  [python.org](https://www.python.org/downloads/) and keep the **“tcl/tk and IDLE”**
+  option checked during setup. (On macOS, avoid the Homebrew Python — it omits tkinter.)
+- **Ubuntu / Debian:** `sudo apt install python3-tk`
+- **Fedora / RHEL:** `sudo dnf install python3-tkinter`
 
-- **macOS**: download and install Python from [python.org/downloads](https://www.python.org/downloads/)
-- **Ubuntu / Debian**: `sudo apt install python3-tk`
-- **Fedora / RHEL**: `sudo dnf install python3-tkinter`
+---
+
+### Windows: "running scripts is disabled on this system"
+
+Windows blocks PowerShell scripts by default. Run the installer with the bypass flag
+(it only affects that one command):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File install.ps1
+```
+
+---
+
+### Bluetooth finds no devices
+
+- **Windows:** make sure Bluetooth is turned on (Settings → Bluetooth & devices) and
+  you're on Windows 10 or 11. Close the LEGO Education app or any other program that
+  might be holding the connection.
+- **macOS:** the first run triggers a system permission dialog — click **OK**. If you
+  denied it, enable your terminal under **System Settings → Privacy & Security →
+  Bluetooth**.
+- **Linux:** ensure BlueZ is installed and the Bluetooth service is running.
 
 ---
 
 ### cairosvg imports but icons still don't appear (mixed Intel + Apple Silicon Mac)
 
-libcairo is installed but in a path that does not match your Python's architecture. This happens when Intel and Apple Silicon Homebrew coexist on the same Mac.
-
-Check your Python architecture:
+macOS only. libcairo is installed but in a path that doesn't match your Python's
+architecture (common when Intel and Apple Silicon Homebrew coexist).
 
 ```bash
 python3 -c "import platform; print(platform.machine())"
 ```
 
-The output should match your Homebrew prefix:
 - `x86_64` → Homebrew at `/usr/local`
 - `arm64` → Homebrew at `/opt/homebrew`
 
-If they don't match, install Python from python.org for the correct architecture, or reinstall Homebrew for the matching architecture.
-
----
-
-### BLE / Bluetooth permission denied on macOS
-
-The first run triggers a system dialog asking for Bluetooth access. Click OK or the scan will find nothing.
-
-If you accidentally denied it: **System Settings → Privacy & Security → Bluetooth** → enable Terminal (or whichever app you run noWand from).
+If they don't match, install Python from python.org for the correct architecture, or
+reinstall Homebrew to match.
 
 ---
 
 ### Color sensor shows `…` and never updates
 
-The sensor sometimes needs a physical reset after a crash. Hold the button on the hub until it restarts. The app shows `…` while waiting for the first reading — this is normal for 1–2 seconds after connecting.
+The sensor sometimes needs a physical reset after a crash. Hold the button on the hub
+until it restarts. The app shows `…` while waiting for the first reading — this is
+normal for 1–2 seconds after connecting.
 
 ---
 
@@ -189,7 +248,8 @@ noWand/
   device_manager.py       # BLE scan + connect logic
   lelib.py                # device wrappers (singleMotor, doubleMotor, colorSensor, controller)
   requirements.txt        # pip dependencies
-  install.sh              # one-shot installer script
+  install.sh              # one-shot installer (macOS / Linux)
+  install.ps1             # one-shot installer (Windows / PowerShell)
   icons/
     single_motor.svg
     double_motor.svg
