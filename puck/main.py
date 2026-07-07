@@ -13,6 +13,7 @@ no aioble.
 """
 
 import time
+import machine
 
 import config
 import lego_ble as L
@@ -20,11 +21,75 @@ from program_cards import remap_color
 from behaviors import get as get_behavior
 from ble_central import PuckBLE
 from status import Status
+from max17048 import MAX17048
 
 NEOPIXEL_PIN = 20
 NEOPIXEL_COUNT = 3
 BEHAVIOR_MS = 60
 HUNT_SCAN_MS = 3000
+
+LOW_BATT_PCT = 20        # blink red below this state-of-charge
+BATT_CHECK_MS = 5000     # how often to poll the fuel gauge
+BATT_I2C_SDA = 22
+BATT_I2C_SCL = 23
+
+_batt = None
+_batt_last = 0
+
+
+def init_battery():
+    global _batt
+    try:
+        i2c = machine.SoftI2C(sda=machine.Pin(BATT_I2C_SDA),
+                              scl=machine.Pin(BATT_I2C_SCL), freq=400_000)
+        gauge = MAX17048(i2c)
+        _batt = gauge if gauge.is_connected() else None
+    except Exception:
+        _batt = None
+    print("battery gauge:", "present" if _batt else "not found")
+
+
+def battery_color(soc):
+    """State-of-charge -> indicator color."""
+    if soc >= 80:
+        return (0, 255, 0)      # green
+    if soc >= 40:
+        return (255, 255, 0)    # yellow
+    if soc >= LOW_BATT_PCT:
+        return (255, 120, 0)    # orange
+    return (255, 0, 0)          # red
+
+
+def battery_boot_indicator(status):
+    """At boot, print the level and flash its color so people can read it."""
+    if _batt is None:
+        print("battery: no gauge")
+        return
+    try:
+        soc = _batt.soc
+    except Exception:
+        print("battery: read failed")
+        return
+    print("battery: %.0f%%" % soc)
+    status.blink(battery_color(soc), times=3)
+
+
+def maybe_warn_battery(status):
+    """Poll the fuel gauge at most every BATT_CHECK_MS; print level, blink if low."""
+    global _batt_last
+    if _batt is None:
+        return
+    now = time.ticks_ms()
+    if time.ticks_diff(now, _batt_last) < BATT_CHECK_MS:
+        return
+    _batt_last = now
+    try:
+        soc = _batt.soc
+    except Exception:
+        return
+    print("battery: %.0f%%" % soc)
+    if soc < LOW_BATT_PCT:
+        status.low_battery()
 
 
 def present_kinds(puck, connected):
@@ -80,6 +145,8 @@ def run_puck():
     print("identity:", config.PUCK_COLOR, "#%d" % serial,
           "| behavior:", behavior.NAME, "requires", behavior.REQUIRED)
 
+    init_battery()
+    battery_boot_indicator(status)
     puck = PuckBLE()
     connected = {}     # slot -> {'kind', 'addr', 'dev'}
 
@@ -87,6 +154,7 @@ def run_puck():
         # ── SCAN: connect until the behavior's required devices are present ──
         while not satisfied(puck, connected, behavior.REQUIRED):
             prune(puck, connected)
+            maybe_warn_battery(status)
             status.set_progress(len(connected))
             needed = still_needed(puck, connected, behavior.REQUIRED)
             have_addrs = set(c["addr"] for c in connected.values())
@@ -120,6 +188,7 @@ def run_puck():
                 print("tick error:", e)
             time.sleep_ms(BEHAVIOR_MS)
             prune(puck, connected)
+            maybe_warn_battery(status)
 
         if hasattr(behavior, "on_stop"):
             try:

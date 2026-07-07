@@ -24,10 +24,12 @@ Because the puck can't read its own card, its identity + behavior are
 |------|-----------|
 | Board | Seeed **XIAO ESP32-C6**, MicroPython |
 | NeoPixels | **3 pixels on GPIO20** |
+| MAX17048 fuel gauge | I²C — **SDA = GPIO22, SCL = GPIO23**, address `0x36` (optional) |
 | NFC card | passive sticker on the puck — no wiring; just carries color + serial |
 
-(No reader, no I²C. The XIAO's external antenna is selected automatically by
-`bledevice.py` on GPIO3/GPIO14.)
+(No NFC reader. The XIAO's external antenna is selected automatically by
+`bledevice.py` on GPIO3/GPIO14. If no fuel gauge is present the puck just skips
+battery monitoring.)
 
 ---
 
@@ -39,7 +41,7 @@ Because the puck can't read its own card, its identity + behavior are
 2. Copy all `puck/` files to the board (the whole `behaviors/` folder too):
    ```bash
    mpremote connect <port> fs cp config.py main.py lego_ble.py status.py \
-       program_cards.py bledevice.py ble_central.py : + \
+       max17048.py program_cards.py bledevice.py ble_central.py : + \
        fs cp -r behaviors :
    ```
 3. Reset the board. `main.py` runs automatically.
@@ -133,7 +135,11 @@ onto that puck's card so they advertise the same color + serial.
 | Quick white blip | A matching device was found |
 | N pixels solid (puck color), rest breathing | N devices connected so far |
 | All 3 solid, bright | All required devices connected — behavior running |
-| Blinking red | Fatal error (unknown `PUCK_COLOR` or `BEHAVIOR`) |
+| Red blinks (2×), then resumes | **Battery below 20%** (checked every 5 s) |
+| Continuous red blink | Fatal error (unknown `PUCK_COLOR` or `BEHAVIOR`) |
+
+Brightness is capped at `_MAX_VAL` (50/255) in `status.py`; low-battery threshold
+is `LOW_BATT_PCT` (20%) in `main.py`.
 
 ---
 
@@ -142,8 +148,9 @@ onto that puck's card so they advertise the same color + serial.
 ```
 puck/
   config.py       # <-- the only file you edit per puck (color, serial, behavior)
-  main.py         # scan/run/self-heal state machine
-  status.py       # 3-NeoPixel status display (breathe / found / progress / running)
+  main.py         # scan/run/self-heal state machine + battery monitor
+  status.py       # 3-NeoPixel status display (breathe / found / progress / running / low-batt)
+  max17048.py     # battery fuel-gauge driver (optional; skipped if absent)
   lego_ble.py     # LEGO RPC protocol: commands, notification + advert parsing, device model
   ble_central.py  # PuckBLE transport (discover/connect/notify) on top of bledevice.py
   bledevice.py    # repo's raw-bluetooth BLE central driver (multi-slot, IRQ-driven)

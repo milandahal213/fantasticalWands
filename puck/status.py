@@ -68,6 +68,22 @@ class Status:
             self.np[i] = (0, 0, 0)
         self.np.write()
 
+    def blink(self, rgb, times=3, on_ms=220, off_ms=160):
+        """Blink an arbitrary color (brightness-capped), then restore display."""
+        c = self._cap(rgb)
+        for _ in range(times):
+            for i in range(self.n):
+                self.np[i] = c
+            self.np.write()
+            time.sleep_ms(on_ms)
+            self.clear()
+            time.sleep_ms(off_ms)
+        self._render()
+
+    def low_battery(self, times=2):
+        """Blink red as a low-battery warning, then restore the normal display."""
+        self.blink((255, 0, 0), times=times, on_ms=150, off_ms=150)
+
     def error(self):
         while True:
             for i in range(self.n):
