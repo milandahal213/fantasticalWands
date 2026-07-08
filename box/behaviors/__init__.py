@@ -26,7 +26,6 @@ from behaviors.color_soundboard import ColorSoundboard
 from behaviors.simon_says import SimonSays
 from behaviors.radar import Radar
 from behaviors.gesture_drum import GestureDrum
-from behaviors.dance import Dance
 
 BEHAVIORS = {
     "tank_drive": TankDrive,
@@ -43,7 +42,6 @@ BEHAVIORS = {
     "simon_says": SimonSays,
     "radar": Radar,
     "gesture_drum": GestureDrum,
-    "dance": Dance,
 }
 
 

@@ -72,8 +72,18 @@ Built-in behaviors and the devices they need:
 |-----|----------|----------|
 | `tank_drive` | Left/right sticks drive left/right motors | Controller + Double Motor |
 | `arcade_drive` | Throttle + steering mix | Controller + Double Motor |
-| `light_theremin` | Reflected light → motor speed | Color Sensor + Single Motor |
+| `gyro_drive` | Drives straight using IMU heading hold | Controller + Double Motor |
+| `precision_turn` | Flick stick → exact spin-in-place turn + beep | Controller + Double Motor |
+| `tilt_steer` | Throttle on stick, steer by tilting (IMU roll) | Controller + Double Motor |
+| `line_follower` | Rides a line edge by reflected brightness | Color Sensor + Double Motor |
+| `color_gearbox` | Tap a color to set the speed "gear", then drive | Color Sensor + Controller + Double Motor |
+| `motor_knob` | Hand-turn the single motor as a dial for the drive | Single Motor + Double Motor |
+| `light_theremin` | Reflected brightness → single-motor speed | Color Sensor + Single Motor |
 | `spin` | Spin continuously | Single Motor |
+| `color_soundboard` | Each color plays a note on the sensor | Color Sensor |
+| `simon_says` | Color memory game with beep feedback | Color Sensor |
+| `radar` | Sweep the sensor; beep faster as things get closer | Single Motor + Color Sensor |
+| `gesture_drum` | IMU taps/shakes fire drum notes; stick shifts pitch | Double Motor + Controller |
 
 ### Adding a behavior
 
