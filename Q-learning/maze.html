@@ -483,6 +483,8 @@ const Maze = (function(){
   let speedLevel=5;
   let lastTouched=new Set();
   let logLines=[];
+  let logIdCounter=0;
+  let expandedLogIds=new Set();
   let ALPHA=0.5, GAMMA=0.9, EPS=0.2;
   let goalReward=10, wallPenalty=-1, stepPenalty=-0.1;
   const MAXSTEPS=60;
@@ -627,12 +629,14 @@ const Maze = (function(){
         lastActionLabel=SHORT[a];
         const {next,reward,done}=doStep(s,a,goal);
         const before=Q[s][a];
-        const maxNext=Math.max(...Q[next]);
+        const nextVals=Q[next].slice();
+        const maxNext=Math.max(...nextVals);
         Q[s][a]+=ALPHA*(reward+GAMMA*maxNext-Q[s][a]);
         const after=Q[s][a];
         lastTouched=new Set([s]);
         const [r,c]=rc(s);
-        logLines.unshift('('+r+','+c+') \u2192 '+NAMES[a]+'  reward '+(reward>=0?'+':'')+reward.toFixed(1)+'  Q: '+before.toFixed(2)+' \u2192 '+after.toFixed(2));
+        const [nr,nc]=rc(next);
+        logLines.unshift({id:logIdCounter++, r, c, nr, nc, action:NAMES[a], reward, alpha:ALPHA, gamma:GAMMA, before, after, nextVals, maxNext});
         logLines=logLines.slice(0,8);
         agentPos=next;
         s=next;
@@ -677,13 +681,15 @@ const Maze = (function(){
         const a = Math.random()<EPS ? Math.floor(Math.random()*4) : argmax(Q[s]);
         const {next,reward,done}=doStep(s,a,goal);
         const before=Q[s][a];
-        const maxNext=Math.max(...Q[next]);
+        const nextVals=Q[next].slice();
+        const maxNext=Math.max(...nextVals);
         Q[s][a]+= ALPHA*(reward+GAMMA*maxNext-Q[s][a]);
         const after=Q[s][a];
         lastTouched.add(s);
         if(detailedLog){
           const [r,c]=rc(s);
-          logLines.unshift('('+r+','+c+') \u2192 '+NAMES[a]+'  reward '+(reward>=0?'+':'')+reward.toFixed(1)+'  Q: '+before.toFixed(2)+' \u2192 '+after.toFixed(2));
+          const [nr,nc]=rc(next);
+          logLines.unshift({id:logIdCounter++, r, c, nr, nc, action:NAMES[a], reward, alpha:ALPHA, gamma:GAMMA, before, after, nextVals, maxNext});
         }
         s=next;
         if(done) break;
@@ -710,6 +716,7 @@ const Maze = (function(){
     lastActionLabel='';
     lastTouched=new Set();
     logLines=[];
+    expandedLogIds=new Set();
     qHistory=[];
     msg('Q-table reset. All values are zero again — the agent knows nothing.');
     render();
@@ -811,6 +818,46 @@ const Maze = (function(){
 
   function msg(t){ document.getElementById('maze-msg').textContent=t; }
 
+  function toggleLogDetail(id){
+    if(expandedLogIds.has(id)) expandedLogIds.delete(id);
+    else expandedLogIds.add(id);
+    render();
+  }
+
+  function logHtml(){
+    const dirNames=['up','down','left','right'];
+    return logLines.map(entry=>{
+      if(typeof entry==='string'){
+        return '<div>'+entry+'</div>';
+      }
+      const expanded=expandedLogIds.has(entry.id);
+      const sign=entry.reward>=0?'+':'';
+      const summary='('+(entry.r+1)+','+(entry.c+1)+') \u2192 '+entry.action+
+        '  reward '+sign+entry.reward.toFixed(2)+'  Q: '+entry.before.toFixed(2)+' \u2192 '+entry.after.toFixed(2);
+      let detail='';
+      if(expanded){
+        const gm=entry.gamma*entry.maxNext;
+        const target=entry.reward+gm;
+        const tdError=target-entry.before;
+        const alphaErr=entry.alpha*tdError;
+        const nextValsStr=dirNames.map((d,i)=>d+'='+entry.nextVals[i].toFixed(2)).join(', ');
+        detail='<div style="margin:4px 0 8px 12px;padding:8px 10px;background:var(--surface-2);border-left:2px solid var(--accent);border-radius:4px;font-size:10.5px;line-height:1.8;">'+
+          'Moving from ('+(entry.r+1)+','+(entry.c+1)+') to ('+(entry.nr+1)+','+(entry.nc+1)+') via <strong>'+entry.action+'</strong><br>'+
+          'Q(s,a) before &nbsp;= '+entry.before.toFixed(3)+'<br>'+
+          'reward &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;= '+entry.reward.toFixed(3)+'<br>'+
+          'next-state Q-values: '+nextValsStr+'<br>'+
+          '&gamma; &times; max(Q(s&prime;)) = '+entry.gamma.toFixed(2)+' &times; '+entry.maxNext.toFixed(3)+' = '+gm.toFixed(3)+'<br>'+
+          'target = reward + &gamma;max(Q(s&prime;)) = '+entry.reward.toFixed(3)+' + '+gm.toFixed(3)+' = '+target.toFixed(3)+'<br>'+
+          'TD error = target &minus; Q(s,a) = '+target.toFixed(3)+' &minus; '+entry.before.toFixed(3)+' = '+tdError.toFixed(3)+'<br>'+
+          '&alpha; &times; TD error = '+entry.alpha.toFixed(2)+' &times; '+tdError.toFixed(3)+' = '+alphaErr.toFixed(3)+'<br>'+
+          'Q(s,a) after = before + &alpha;&times;error = '+entry.before.toFixed(3)+' + '+alphaErr.toFixed(3)+' = <strong>'+entry.after.toFixed(3)+'</strong>'+
+          '</div>';
+      }
+      return '<div style="cursor:pointer;" onclick="Maze.toggleLogDetail('+entry.id+')">'+summary+
+        ' <span style="color:var(--text-muted);font-size:9px;">'+(expanded?'&#9650; hide math':'&#9660; show math')+'</span></div>'+detail;
+    }).join('');
+  }
+
   function render(){
     const treadPhase=((frameTick*0.7)%6+6)%6;
     frameTick++;
@@ -882,7 +929,7 @@ const Maze = (function(){
     }
     gridEl.innerHTML=html;
 
-    document.getElementById('maze-log').innerHTML = logLines.map(l=>'<div>'+l+'</div>').join('');
+    document.getElementById('maze-log').innerHTML = logHtml();
     document.getElementById('maze-chart').innerHTML = chartHtml();
     document.getElementById('maze-qtable').innerHTML = qTableHtml();
   }
@@ -922,7 +969,7 @@ const Maze = (function(){
 
   render();
 
-  return { train, walkGreedy, resetAll, setClickMode, handleCellClick, setParam, setSpeed, setReward };
+  return { train, walkGreedy, resetAll, setClickMode, handleCellClick, setParam, setSpeed, setReward, toggleLogDetail };
 })();
 </script>
 
