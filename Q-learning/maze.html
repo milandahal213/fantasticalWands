@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Q-learning maze — interactive simulator</title>
 <style>
+<style>
   :root {
     --bg: #ffffff;
     --surface: #f7f6f3;
@@ -338,6 +339,7 @@
     padding-top: 16px;
   }
 </style>
+</style>
 </head>
 <body>
 
@@ -345,6 +347,7 @@
 
 <h1>Q-learning maze</h1>
 <p class="subtitle">An interactive walkthrough of how a Q-table learns — and why it breaks when the goal moves.</p>
+
 
 <h2>The setup</h2>
 <p>
@@ -379,6 +382,7 @@
           <input type="range" min="0" max="0.99" step="0.01" value="0.9" oninput="Maze.setParam('GAMMA', this.value)">
           <span id="maze-gamma-out" class="slider-val">0.90</span>
         </div>
+        <div id="maze-gamma-chart"></div>
       </div>
       <div class="sidebar-slider">
         <label>Exploration (&epsilon;)</label>
@@ -421,7 +425,20 @@
       </div>
 
       <div id="maze-stats" class="stats-row"></div>
-      <div id="maze-grid" class="cell-grid"></div>
+      <div style="position:relative;max-width:460px;margin:0 auto;">
+        <div id="maze-grid" class="cell-grid"></div>
+        <svg id="maze-arrow-overlay" viewBox="0 0 100 100" preserveAspectRatio="none" style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none;">
+          <defs>
+            <marker id="maze-arrowhead" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+              <path d="M2 1L8 5L2 9" fill="none" stroke="var(--accent)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+            </marker>
+            <marker id="maze-arrowhead-explore" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+              <path d="M2 1L8 5L2 9" fill="none" stroke="var(--goal)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+            </marker>
+          </defs>
+          <g id="maze-arrow-content"></g>
+        </svg>
+      </div>
 
       <div class="sim-action-row">
         <div class="train-control">
@@ -484,7 +501,9 @@ const Maze = (function(){
   let lastTouched=new Set();
   let logLines=[];
   let logIdCounter=0;
-  let expandedLogIds=new Set();
+  let epStepCount=0;
+  let epExploreCount=0;
+  let expandedLogId=null;
   let ALPHA=0.5, GAMMA=0.9, EPS=0.2;
   let goalReward=10, wallPenalty=-1, stepPenalty=-0.1;
   const MAXSTEPS=60;
@@ -607,6 +626,8 @@ const Maze = (function(){
     lastTouched=new Set();
     agentPos=START;
     lastActionLabel='';
+    epStepCount=0;
+    epExploreCount=0;
     let s=START;
     let t=0;
     render();
@@ -624,7 +645,10 @@ const Maze = (function(){
         return;
       }
       setTimeout(()=>{
-        const a = Math.random()<EPS ? Math.floor(Math.random()*4) : argmax(Q[s]);
+        const explore = Math.random()<EPS;
+        const a = explore ? Math.floor(Math.random()*4) : argmax(Q[s]);
+        epStepCount++;
+        if(explore) epExploreCount++;
         facingDeg=ACTION_DEG[a];
         lastActionLabel=SHORT[a];
         const {next,reward,done}=doStep(s,a,goal);
@@ -636,7 +660,7 @@ const Maze = (function(){
         lastTouched=new Set([s]);
         const [r,c]=rc(s);
         const [nr,nc]=rc(next);
-        logLines.unshift({id:logIdCounter++, r, c, nr, nc, action:NAMES[a], reward, alpha:ALPHA, gamma:GAMMA, before, after, nextVals, maxNext});
+        logLines.unshift({id:logIdCounter++, r, c, nr, nc, action:NAMES[a], reward, alpha:ALPHA, gamma:GAMMA, before, after, nextVals, maxNext, explore});
         logLines=logLines.slice(0,8);
         agentPos=next;
         s=next;
@@ -651,8 +675,26 @@ const Maze = (function(){
   function setParam(name, value){
     const v = parseFloat(value);
     if(name==='ALPHA'){ ALPHA=v; document.getElementById('maze-alpha-out').textContent=v.toFixed(2); }
-    if(name==='GAMMA'){ GAMMA=v; document.getElementById('maze-gamma-out').textContent=v.toFixed(2); }
+    if(name==='GAMMA'){ GAMMA=v; document.getElementById('maze-gamma-out').textContent=v.toFixed(2); drawGammaChart(); }
     if(name==='EPS'){ EPS=v; document.getElementById('maze-eps-out').textContent=v.toFixed(2); }
+  }
+
+  function drawGammaChart(){
+    const el=document.getElementById('maze-gamma-chart');
+    if(!el) return;
+    const n=12, w=176, h=54, padB=12, padT=4;
+    let pts='';
+    for(let i=0;i<=n;i++){
+      const x=(i/n)*w;
+      const y=padT+(1-Math.pow(GAMMA,i))*(h-padT-padB);
+      pts+=(i===0?'M':'L')+x.toFixed(1)+' '+y.toFixed(1)+' ';
+    }
+    el.innerHTML='<div style="font-size:10px;color:var(--text-muted);margin-top:2px;">discount over distance (&gamma;<sup>n</sup>)</div>'+
+      '<svg viewBox="0 0 '+w+' '+h+'" style="width:100%;height:'+h+'px;display:block;">'+
+      '<path d="'+pts+'" fill="none" stroke="var(--accent)" stroke-width="1.4"/>'+
+      '<text x="0" y="'+h+'" font-size="8" fill="var(--text-muted)">0</text>'+
+      '<text x="'+(w-14)+'" y="'+h+'" font-size="8" fill="var(--text-muted)">'+n+' steps</text>'+
+      '</svg>';
   }
 
   function idx(r,c){return r*COLS+c;}
@@ -675,10 +717,15 @@ const Maze = (function(){
     if(isAnimating){ msg('Hang on for the current episode to finish.'); return; }
     lastTouched=new Set();
     if(detailedLog) logLines=[];
+    epStepCount=0;
+    epExploreCount=0;
     for(let e=0;e<n;e++){
       let s=START;
       for(let t=0;t<MAXSTEPS;t++){
-        const a = Math.random()<EPS ? Math.floor(Math.random()*4) : argmax(Q[s]);
+        const explore = Math.random()<EPS;
+        const a = explore ? Math.floor(Math.random()*4) : argmax(Q[s]);
+        epStepCount++;
+        if(explore) epExploreCount++;
         const {next,reward,done}=doStep(s,a,goal);
         const before=Q[s][a];
         const nextVals=Q[next].slice();
@@ -689,7 +736,7 @@ const Maze = (function(){
         if(detailedLog){
           const [r,c]=rc(s);
           const [nr,nc]=rc(next);
-          logLines.unshift({id:logIdCounter++, r, c, nr, nc, action:NAMES[a], reward, alpha:ALPHA, gamma:GAMMA, before, after, nextVals, maxNext});
+          logLines.unshift({id:logIdCounter++, r, c, nr, nc, action:NAMES[a], reward, alpha:ALPHA, gamma:GAMMA, before, after, nextVals, maxNext, explore});
         }
         s=next;
         if(done) break;
@@ -716,7 +763,9 @@ const Maze = (function(){
     lastActionLabel='';
     lastTouched=new Set();
     logLines=[];
-    expandedLogIds=new Set();
+    expandedLogId=null;
+    epStepCount=0;
+    epExploreCount=0;
     qHistory=[];
     msg('Q-table reset. All values are zero again — the agent knows nothing.');
     render();
@@ -819,20 +868,57 @@ const Maze = (function(){
   function msg(t){ document.getElementById('maze-msg').textContent=t; }
 
   function toggleLogDetail(id){
-    if(expandedLogIds.has(id)) expandedLogIds.delete(id);
-    else expandedLogIds.add(id);
+    expandedLogId = (expandedLogId===id) ? null : id;
     render();
   }
 
+  function arrowOverlaySvg(){
+    const entry=logLines.find(e=>typeof e!=='string' && e.id===expandedLogId);
+    if(!entry) return '';
+    const x1=(entry.c+0.5)/COLS*100, y1=(entry.r+0.5)/ROWS*100;
+    const x2=(entry.nc+0.5)/COLS*100, y2=(entry.nr+0.5)/ROWS*100;
+    const strokeColor = entry.explore ? 'var(--goal)' : 'var(--accent)';
+    const marker = entry.explore ? 'url(#maze-arrowhead-explore)' : 'url(#maze-arrowhead)';
+    const dash = entry.explore ? '2 2' : '3 2';
+    return '<line x1="'+x1.toFixed(2)+'" y1="'+y1.toFixed(2)+'" x2="'+x2.toFixed(2)+'" y2="'+y2.toFixed(2)+
+      '" stroke="'+strokeColor+'" stroke-width="1.4" stroke-dasharray="'+dash+'" marker-end="'+marker+'"/>'+
+      '<circle cx="'+x1.toFixed(2)+'" cy="'+y1.toFixed(2)+'" r="2.2" fill="var(--success)"/>'+
+      '<circle cx="'+x2.toFixed(2)+'" cy="'+y2.toFixed(2)+'" r="2.2" fill="'+strokeColor+'"/>';
+  }
+
+  function nextValsBarChart(nextVals, maxNext){
+    const w=200,h=64,baseline=34;
+    const maxAbs=Math.max(1, ...nextVals.map(v=>Math.abs(v)));
+    const scale=24/maxAbs;
+    const labels=['U','D','L','R'];
+    const barW=32, gap=16;
+    let bars='';
+    for(let i=0;i<4;i++){
+      const v=nextVals[i];
+      const bh=Math.max(1,Math.abs(v)*scale);
+      const x=12+i*(barW+gap);
+      const y = v>=0 ? baseline-bh : baseline;
+      const isMax = v===maxNext;
+      const color = isMax ? 'var(--accent)' : 'var(--text-muted)';
+      bars+='<rect x="'+x+'" y="'+y+'" width="'+barW+'" height="'+bh+'" fill="'+color+'" opacity="'+(isMax?1:0.5)+'" rx="2"/>';
+      bars+='<text x="'+(x+barW/2)+'" y="'+(h-3)+'" text-anchor="middle" font-size="8" fill="var(--text-muted)">'+labels[i]+'</text>';
+      bars+='<text x="'+(x+barW/2)+'" y="'+(v>=0? y-3 : y+bh+9)+'" text-anchor="middle" font-size="7.5" fill="'+color+'">'+v.toFixed(2)+'</text>';
+    }
+    return '<svg viewBox="0 0 '+w+' '+h+'" style="width:100%;max-width:220px;height:64px;display:block;margin:4px 0 2px;">'+
+      '<line x1="0" y1="'+baseline+'" x2="'+w+'" y2="'+baseline+'" stroke="var(--border)" stroke-width="1"/>'+bars+'</svg>';
+  }
+
   function logHtml(){
-    const dirNames=['up','down','left','right'];
     return logLines.map(entry=>{
       if(typeof entry==='string'){
         return '<div>'+entry+'</div>';
       }
-      const expanded=expandedLogIds.has(entry.id);
+      const expanded=(entry.id===expandedLogId);
       const sign=entry.reward>=0?'+':'';
-      const summary='('+(entry.r+1)+','+(entry.c+1)+') \u2192 '+entry.action+
+      const modeTag = entry.explore
+        ? '<span style="color:var(--goal);font-weight:700;font-size:9px;letter-spacing:0.3px;">EXPLORE</span>'
+        : '<span style="color:var(--accent);font-weight:700;font-size:9px;letter-spacing:0.3px;">EXPLOIT</span>';
+      const summary=modeTag+'  ('+(entry.r+1)+','+(entry.c+1)+') \u2192 '+entry.action+
         '  reward '+sign+entry.reward.toFixed(2)+'  Q: '+entry.before.toFixed(2)+' \u2192 '+entry.after.toFixed(2);
       let detail='';
       if(expanded){
@@ -840,15 +926,22 @@ const Maze = (function(){
         const target=entry.reward+gm;
         const tdError=target-entry.before;
         const alphaErr=entry.alpha*tdError;
-        const nextValsStr=dirNames.map((d,i)=>d+'='+entry.nextVals[i].toFixed(2)).join(', ');
-        detail='<div style="margin:4px 0 8px 12px;padding:8px 10px;background:var(--surface-2);border-left:2px solid var(--accent);border-radius:4px;font-size:10.5px;line-height:1.8;">'+
+        const rewardSpan='<span style="color:var(--success);font-weight:600;">'+entry.reward.toFixed(3)+'</span>';
+        const futureSpan='<span style="color:var(--accent);font-weight:600;">'+gm.toFixed(3)+'</span>';
+        const gmFormula='<span style="color:var(--accent);font-weight:600;">'+entry.gamma.toFixed(2)+' &times; '+entry.maxNext.toFixed(3)+'</span>';
+        const modeExplain = entry.explore
+          ? '<span style="color:var(--goal);">This action was chosen at random (exploration), not from the table.</span>'
+          : '<span style="color:var(--accent);">This action was the table\u2019s current best guess (exploitation).</span>';
+        detail='<div style="margin:4px 0 8px 12px;padding:10px 12px;background:var(--surface-2);border-left:2px solid var(--accent);border-radius:4px;font-size:10.5px;line-height:1.8;">'+
+          modeExplain+'<br>'+
           'Moving from ('+(entry.r+1)+','+(entry.c+1)+') to ('+(entry.nr+1)+','+(entry.nc+1)+') via <strong>'+entry.action+'</strong><br>'+
           'Q(s,a) before &nbsp;= '+entry.before.toFixed(3)+'<br>'+
-          'reward &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;= '+entry.reward.toFixed(3)+'<br>'+
-          'next-state Q-values: '+nextValsStr+'<br>'+
-          '&gamma; &times; max(Q(s&prime;)) = '+entry.gamma.toFixed(2)+' &times; '+entry.maxNext.toFixed(3)+' = '+gm.toFixed(3)+'<br>'+
-          'target = reward + &gamma;max(Q(s&prime;)) = '+entry.reward.toFixed(3)+' + '+gm.toFixed(3)+' = '+target.toFixed(3)+'<br>'+
-          'TD error = target &minus; Q(s,a) = '+target.toFixed(3)+' &minus; '+entry.before.toFixed(3)+' = '+tdError.toFixed(3)+'<br>'+
+          '<span style="color:var(--success);">reward (real, this step)</span> = '+rewardSpan+'<br>'+
+          'next-state Q-values — the max one (highlighted) is the borrowed estimate:'+
+          nextValsBarChart(entry.nextVals, entry.maxNext)+
+          '<span style="color:var(--accent);">&gamma; &times; max(Q(s&prime;)) (estimated future)</span> = '+gmFormula+' = '+futureSpan+'<br>'+
+          'target = '+rewardSpan+' + '+futureSpan+' = '+target.toFixed(3)+'<br>'+
+          'TD error = target &minus; before = '+target.toFixed(3)+' &minus; '+entry.before.toFixed(3)+' = '+tdError.toFixed(3)+'<br>'+
           '&alpha; &times; TD error = '+entry.alpha.toFixed(2)+' &times; '+tdError.toFixed(3)+' = '+alphaErr.toFixed(3)+'<br>'+
           'Q(s,a) after = before + &alpha;&times;error = '+entry.before.toFixed(3)+' + '+alphaErr.toFixed(3)+' = <strong>'+entry.after.toFixed(3)+'</strong>'+
           '</div>';
@@ -865,10 +958,15 @@ const Maze = (function(){
     const [gr,gc]=rc(goal);
     const [sr,sc]=rc(START);
     const stale = trainedGoal!==null && trainedGoal!==goal;
+    const exploreRate = epStepCount>0 ? Math.round(epExploreCount/epStepCount*100) : null;
+    const exploreStat = exploreRate!==null
+      ? '<span>Exploring: '+epExploreCount+'/'+epStepCount+' steps this run ('+exploreRate+'%, target '+Math.round(EPS*100)+'%)</span>'
+      : '';
     statsEl.innerHTML =
       '<span>Episodes trained: '+episodesTrained+'</span>'+
       '<span>Start: row '+(sr+1)+', col '+(sc+1)+'</span>'+
       '<span>Goal: row '+(gr+1)+', col '+(gc+1)+'</span>'+
+      exploreStat+
       (stale ? '<span class="stale">Policy is stale for this goal</span>' : '');
 
     const gridEl=document.getElementById('maze-grid');
@@ -930,6 +1028,7 @@ const Maze = (function(){
     gridEl.innerHTML=html;
 
     document.getElementById('maze-log').innerHTML = logHtml();
+    document.getElementById('maze-arrow-content').innerHTML = arrowOverlaySvg();
     document.getElementById('maze-chart').innerHTML = chartHtml();
     document.getElementById('maze-qtable').innerHTML = qTableHtml();
   }
@@ -967,6 +1066,7 @@ const Maze = (function(){
   }
   function fmt(v){ return v.toFixed(1); }
 
+  drawGammaChart();
   render();
 
   return { train, walkGreedy, resetAll, setClickMode, handleCellClick, setParam, setSpeed, setReward, toggleLogDetail };
