@@ -1,0 +1,834 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Line-following robot — interactive simulator</title>
+<style>
+  :root {
+    --bg: #ffffff;
+    --surface: #f7f6f3;
+    --surface-2: #efeee9;
+    --border: #ddd9d0;
+    --text: #1f1e1c;
+    --text-secondary: #5f5e5a;
+    --text-muted: #918f88;
+    --accent: #185fa5;
+    --accent-bg: #e6f1fb;
+    --success: #3b6d11;
+    --success-bg: #eaf3de;
+    --danger: #a32d2d;
+    --danger-bg: #fcebeb;
+    --start: #1a7d3c;
+    --start-bg: #d8f0dd;
+    --goal: #b8590a;
+    --goal-bg: #fce9d3;
+    --mono: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #171614;
+      --surface: #211f1c;
+      --surface-2: #2a2825;
+      --border: #3a3833;
+      --text: #ece9e2;
+      --text-secondary: #b4b2a9;
+      --text-muted: #7c7a73;
+      --accent: #85b7eb;
+      --accent-bg: #0c447c;
+      --success: #97c459;
+      --success-bg: #27500a;
+      --danger: #f09595;
+      --danger-bg: #791f1f;
+      --start: #7fdb9c;
+      --start-bg: #133c22;
+      --goal: #f5a95a;
+      --goal-bg: #4a2c0e;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    max-width: 780px;
+    margin: 0 auto;
+    padding: 40px 20px 80px;
+    line-height: 1.6;
+  }
+  h1 { font-size: 26px; font-weight: 600; margin-bottom: 4px; }
+  .subtitle { color: var(--text-secondary); font-size: 15px; margin-bottom: 24px; }
+  h2 { font-size: 18px; font-weight: 600; margin-top: 40px; margin-bottom: 8px; }
+  p { font-size: 15px; color: var(--text-secondary); margin: 8px 0 16px; }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 24px;
+    margin-top: 16px;
+  }
+  .sim-toggle {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 20px;
+  }
+  .sim-toggle button {
+    margin: 0;
+    font-size: 14px;
+    padding: 10px 18px;
+  }
+  .sim-toggle button.active {
+    background: var(--accent-bg);
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+  .sim-panel { display: none; }
+  .sim-panel.active { display: block; }
+
+  .mode-toggle { display: flex; gap: 6px; margin-bottom: 12px; }
+  .mode-toggle button { margin: 0; font-size: 12.5px; }
+  .mode-toggle button.active {
+    background: var(--accent-bg);
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+
+  .segmented {
+    display: inline-flex;
+    background: var(--surface-2);
+    border-radius: 999px;
+    padding: 4px;
+    gap: 2px;
+  }
+  .seg-btn {
+    margin: 0;
+    border: none;
+    background: transparent;
+    border-radius: 999px;
+    padding: 8px 14px;
+    font-size: 13px;
+    color: var(--text-secondary);
+  }
+  .seg-btn:hover { background: var(--surface); }
+  .seg-btn.active {
+    background: var(--accent);
+    color: var(--bg);
+  }
+  .seg-btn.active:hover { background: var(--accent); }
+
+  .reset-btn { margin: 0; }
+
+  .sim-layout {
+    display: grid;
+    grid-template-columns: 210px 1fr;
+    gap: 24px;
+  }
+  .sim-sidebar { display: flex; flex-direction: column; gap: 16px; }
+  .sidebar-slider { display: flex; flex-direction: column; gap: 5px; }
+  .sidebar-slider label { font-size: 12.5px; color: var(--text-secondary); }
+  .sidebar-slider .slider-inline { display: flex; align-items: center; gap: 8px; }
+  .sidebar-slider input[type="range"] { flex: 1; min-width: 0; accent-color: var(--accent); }
+  .sidebar-slider .slider-val {
+    font-size: 12px;
+    font-family: var(--mono);
+    color: var(--text);
+    min-width: 34px;
+    text-align: right;
+    flex-shrink: 0;
+  }
+  .sidebar-rewards { display: flex; flex-direction: column; gap: 10px; padding-top: 4px; border-top: 0.5px solid var(--border); }
+  .sidebar-rewards label { font-size: 12.5px; color: var(--text-secondary); display: block; margin-bottom: 3px; }
+  .sidebar-rewards input[type="number"] {
+    width: 100%;
+    padding: 6px 8px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg);
+    color: var(--text);
+    font-size: 12.5px;
+    box-sizing: border-box;
+  }
+  @media (max-width: 640px) {
+    .sim-layout { grid-template-columns: 1fr; }
+  }
+  .train-control input[type="number"] {
+    padding: 6px 8px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg);
+    color: var(--text);
+    font-size: 13px;
+  }
+
+  .sliders-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px 28px;
+    margin-bottom: 16px;
+  }
+  .slider-item {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    flex: 1 1 160px;
+    min-width: 160px;
+  }
+  .slider-item > label { font-size: 12.5px; color: var(--text-secondary); }
+  .slider-item .slider-inline { display: flex; align-items: center; gap: 8px; }
+  .slider-item input[type="range"] { flex: 1; min-width: 0; accent-color: var(--accent); }
+  .slider-item .slider-val {
+    font-size: 12px;
+    font-family: var(--mono);
+    color: var(--text);
+    min-width: 34px;
+    text-align: right;
+    flex-shrink: 0;
+  }
+  .sim-top-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+  .sim-action-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 14px;
+    margin-top: 14px;
+  }
+  .train-control { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .primary-btn { margin: 0; background: var(--accent-bg); border-color: var(--accent); color: var(--accent); }
+  .primary-btn:hover { background: var(--accent); color: var(--bg); }
+
+  .stats-row {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+    font-size: 13px;
+    color: var(--text-secondary);
+    margin-bottom: 12px;
+  }
+  .stats-row .stale { color: var(--danger); font-weight: 600; }
+
+  .cell-grid {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 4px;
+    width: 100%;
+    max-width: 460px;
+    aspect-ratio: 1;
+    margin: 0 auto 16px;
+  }
+  .cell {
+    position: relative;
+    border-radius: 8px;
+    border: 0.5px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--surface-2);
+    transition: border-color .2s;
+  }
+  .cell.clickable { cursor: pointer; }
+  .cell.clickable:hover { border-color: var(--accent); }
+  .cell .num {
+    position: absolute;
+    font-size: 10px;
+    font-family: var(--mono);
+    transition: color .3s;
+  }
+  .cell .num.up { top: 3px; left: 50%; transform: translateX(-50%); }
+  .cell .num.down { bottom: 3px; left: 50%; transform: translateX(-50%); }
+  .cell .num.left { left: 3px; top: 50%; transform: translateY(-50%); }
+  .cell .num.right { right: 3px; top: 50%; transform: translateY(-50%); }
+  .cell .center { font-size: 15px; font-weight: 600; }
+  .cell .center.agent-active {
+    animation: bob 0.55s ease-in-out infinite alternate;
+    display: inline-block;
+  }
+  @keyframes bob {
+    from { transform: translateY(0) scale(1); }
+    to { transform: translateY(-3px) scale(1.12); }
+  }
+
+  .track-svg { width: 100%; margin-bottom: 12px; }
+  .sensor-row { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+  .sensor-row span.label { font-size: 13px; color: var(--text-secondary); }
+  .sensor-badge { font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 8px; }
+  .q-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-bottom: 14px; }
+  .q-table th { text-align: center; font-weight: 600; color: var(--text-secondary); padding: 5px 6px; font-size: 11px; }
+  .q-table th:first-child { text-align: left; }
+  .q-table td { padding: 5px 6px; text-align: center; border-top: 1px solid var(--border); }
+  .rewards { display: flex; gap: 18px; flex-wrap: wrap; margin-bottom: 16px; }
+  .rewards div { display: flex; align-items: center; gap: 6px; }
+  .rewards label { font-size: 12.5px; color: var(--text-secondary); }
+  .rewards input[type="number"] {
+    width: 60px;
+    padding: 5px 6px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg);
+    color: var(--text);
+    font-size: 12.5px;
+  }
+
+  .sliders { display: flex; flex-direction: column; gap: 10px; margin-bottom: 16px; }
+  .slider-row { display: flex; align-items: center; gap: 10px; }
+  .slider-row label { font-size: 13px; color: var(--text-secondary); min-width: 130px; }
+  .slider-row input[type="range"] { flex: 1; accent-color: var(--accent); }
+  .slider-row .slider-val {
+    font-size: 12.5px;
+    font-family: var(--mono);
+    color: var(--text);
+    min-width: 40px;
+    text-align: right;
+  }
+
+  button {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 8px;
+    padding: 8px 14px;
+    font-size: 13px;
+    cursor: pointer;
+    margin: 0 6px 6px 0;
+    transition: background .15s;
+  }
+  button:hover { background: var(--surface-2); }
+  button:active { transform: scale(0.98); }
+  button.active {
+    background: var(--accent-bg);
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+  .controls { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+
+  .status-msg { font-size: 13px; color: var(--text-secondary); min-height: 20px; margin: 10px 0 0; }
+  .log-panel {
+    background: var(--surface-2);
+    border-radius: 10px;
+    padding: 12px 14px;
+    font-family: var(--mono);
+    font-size: 11.5px;
+    line-height: 1.7;
+    color: var(--text-secondary);
+    min-height: 40px;
+    margin-top: 14px;
+  }
+
+  .legend { display: flex; gap: 18px; flex-wrap: wrap; font-size: 12px; color: var(--text-muted); margin-top: 14px; }
+  .legend span.dot {
+    display: inline-block;
+    width: 10px; height: 10px;
+    border-radius: 3px;
+    margin-right: 5px;
+    vertical-align: -1px;
+  }
+
+  footer {
+    margin-top: 48px;
+    font-size: 12.5px;
+    color: var(--text-muted);
+    border-top: 1px solid var(--border);
+    padding-top: 16px;
+  }
+</style>
+</head>
+<body>
+
+<a href="index.html" style="font-size:13px;color:var(--text-secondary);text-decoration:none;display:inline-block;margin-bottom:16px;">&larr; Back to Q-learning home</a>
+
+<h1>Line-following robot</h1>
+<p class="subtitle">A robot with a color sensor learns to stay centered on a curved red-blue-green line, entirely through trial and error.</p>
+
+<h2>The setup</h2>
+<p>
+  The sensor reads <strong>red</strong> (drifted one way), <strong>blue</strong> (centered), or <strong>green</strong>
+  (drifted the other way) — that reading alone is the state, 3 states in total. Every step it picks one of three
+  actions: turn left, go straight, or turn right. Rewards: <strong>blue</strong> is best, <strong>red/green</strong>
+  are tolerated, and driving off the track ends the episode with a penalty. Reaching the finish line adds a bonus.
+  Exploration and learning rate automatically taper off as training progresses, so the policy settles instead of
+  oscillating forever.
+</p>
+<p>
+  Click "Edit track shape" to reshape the curve yourself — it's a smooth bezier spline through six draggable
+  points, so it stays a real function of left-to-right position (no loops or doubling back), which is what keeps
+  the sensor logic well-defined.
+</p>
+
+<div class="card">
+  <div class="sim-layout">
+    <div class="sim-sidebar">
+      <div class="sidebar-slider">
+        <label>Learning rate (&alpha;)</label>
+        <div class="slider-inline">
+          <input type="range" min="0.05" max="1" step="0.05" value="0.5" oninput="Line.setParam('ALPHA',this.value,'line-alpha-out')">
+          <span id="line-alpha-out" class="slider-val">0.50</span>
+        </div>
+      </div>
+      <div class="sidebar-slider">
+        <label>Discount (&gamma;)</label>
+        <div class="slider-inline">
+          <input type="range" min="0" max="0.99" step="0.01" value="0.9" oninput="Line.setParam('GAMMA',this.value,'line-gamma-out')">
+          <span id="line-gamma-out" class="slider-val">0.90</span>
+        </div>
+      </div>
+      <div class="sidebar-slider">
+        <label>Exploration (&epsilon;)</label>
+        <div class="slider-inline">
+          <input type="range" min="0" max="1" step="0.05" value="0.2" oninput="Line.setParam('EPS',this.value,'line-eps-out')">
+          <span id="line-eps-out" class="slider-val">0.20</span>
+        </div>
+      </div>
+      <div class="sidebar-slider">
+        <label>Bot speed</label>
+        <div class="slider-inline">
+          <input type="range" min="1" max="10" step="1" value="6" oninput="Line.setSpeed(this.value)">
+          <span id="line-speed-out" class="slider-val">6</span>
+        </div>
+      </div>
+      <div class="sidebar-rewards">
+        <div>
+          <label>Center reward</label>
+          <input type="number" step="0.1" value="1" oninput="Line.setReward('blueReward',this.value)">
+        </div>
+        <div>
+          <label>Edge reward</label>
+          <input type="number" step="0.1" value="0.1" oninput="Line.setReward('sideReward',this.value)">
+        </div>
+        <div>
+          <label>Off-track penalty</label>
+          <input type="number" step="0.5" value="-5" oninput="Line.setReward('offPenalty',this.value)">
+        </div>
+      </div>
+    </div>
+
+    <div class="sim-main-col">
+      <div class="sim-top-row">
+        <div class="controls" style="margin:0;">
+          <button id="line-edit-btn" onclick="Line.toggleEditMode()">Edit track shape</button>
+          <button onclick="Line.resetTrackShape()">Reset track shape</button>
+        </div>
+        <button class="reset-btn" onclick="Line.resetQ()">Reset Q-table</button>
+      </div>
+
+      <div id="line-stats" class="stats-row"></div>
+      <svg id="line-trackSvg" class="track-svg" viewBox="0 0 680 320"></svg>
+      <div class="sensor-row">
+        <span class="label">Sensor:</span>
+        <span id="line-sensorBadge" class="sensor-badge"></span>
+      </div>
+      <p id="line-edit-hint" class="status-msg" style="display:none;">Drag the circles up or down to reshape the track. Click "Edit track shape" again when you're done.</p>
+
+      <div class="sim-action-row">
+        <div class="train-control">
+          <input type="number" id="line-episode-input" min="0" max="9999" step="1" value="25" style="width:78px;">
+          <span style="font-size:12px;color:var(--text-muted);">episodes</span>
+          <button class="primary-btn" onclick="Line.train()">Train</button>
+        </div>
+        <button onclick="Line.testPolicy()">Test learned policy</button>
+      </div>
+
+      <p id="line-msg" class="status-msg">Enter a number of episodes and click Train — entering 1 plays the full animated episode. Then click "Test learned policy" to watch it drive without any more learning or randomness.</p>
+      <table id="line-qtable" class="q-table"></table>
+      <div id="line-log" class="log-panel"></div>
+    </div>
+  </div>
+</div>
+
+<h2>Try this</h2>
+<p>
+  1. Train a few hundred episodes, then click "Test learned policy" — this runs the robot with no exploration and
+  no further learning, so you see exactly what it has learned.<br>
+  2. Compare that to entering just 1 episode and training — with &epsilon; above 0, it still takes occasional random
+  actions even mid-run, which is why single training runs can look shakier than test runs.<br>
+  3. Change the off-track penalty, retrain, and test again — a harsher penalty should make it hug the center more
+  cautiously through the curve.<br>
+  4. Train on the default curve, then edit the track into a much sharper wave and test again <em>without</em>
+  retraining — since the policy only reacts to color, not track shape, it often still works reasonably well on
+  a new curve, unlike the maze policy, which broke completely when the goal moved.
+</p>
+
+<footer>
+  Self-contained — open this file in any browser, no server or internet connection required. Built with Claude.
+</footer>
+
+<script>
+const Line = (function(){
+  const X0=40, X1=640, BASEY=170;
+  const N_POINTS=6;
+  const controlX=[];
+  for(let i=0;i<N_POINTS;i++) controlX.push(X0 + i*(X1-X0)/(N_POINTS-1));
+  // default shape matches the original sine curve, sampled at each control point
+  const defaultAMP=55, defaultFREQ=1/90;
+  function defaultY(x){ return BASEY + defaultAMP*Math.sin((x-X0)*defaultFREQ); }
+  let controlY = controlX.map(defaultY);
+
+  const Y_MIN=90, Y_MAX=230;
+  let editMode=false;
+  let dragIndex=-1;
+
+  function segAt(x){
+    const dx=(X1-X0)/(N_POINTS-1);
+    let i=Math.floor((x-X0)/dx);
+    i=Math.max(0,Math.min(N_POINTS-2,i));
+    return {i, dx, t:(x-(X0+i*dx))/dx};
+  }
+  function tangentAt(i){
+    if(i<=0) return controlY[1]-controlY[0];
+    if(i>=N_POINTS-1) return controlY[N_POINTS-1]-controlY[N_POINTS-2];
+    return (controlY[i+1]-controlY[i-1])/2;
+  }
+  function centerlineY(x){
+    const {i,t}=segAt(x);
+    const y0=controlY[i], y1=controlY[i+1];
+    const m0=tangentAt(i), m1=tangentAt(i+1);
+    const t2=t*t, t3=t2*t;
+    const h00=2*t3-3*t2+1, h10=t3-2*t2+t, h01=-2*t3+3*t2, h11=t3-t2;
+    return h00*y0 + h10*m0 + h01*y1 + h11*m1;
+  }
+  function centerlineSlope(x){
+    const {i,dx,t}=segAt(x);
+    const y0=controlY[i], y1=controlY[i+1];
+    const m0=tangentAt(i), m1=tangentAt(i+1);
+    const t2=t*t;
+    const dh00=6*t2-6*t, dh10=3*t2-4*t+1, dh01=-6*t2+6*t, dh11=3*t2-2*t;
+    return (dh00*y0+dh10*m0+dh01*y1+dh11*m1)/dx;
+  }
+  function bezierSegments(offset){
+    const dx=(X1-X0)/(N_POINTS-1);
+    let d='M '+controlX[0].toFixed(1)+' '+(controlY[0]+offset).toFixed(1)+' ';
+    for(let i=0;i<N_POINTS-1;i++){
+      const y0=controlY[i]+offset, y1=controlY[i+1]+offset;
+      const m0=tangentAt(i), m1=tangentAt(i+1);
+      const c1x=controlX[i]+dx/3, c1y=y0+m0/3;
+      const c2x=controlX[i+1]-dx/3, c2y=y1-m1/3;
+      d+='C '+c1x.toFixed(1)+' '+c1y.toFixed(1)+', '+c2x.toFixed(1)+' '+c2y.toFixed(1)+', '+controlX[i+1].toFixed(1)+' '+y1.toFixed(1)+' ';
+    }
+    return d;
+  }
+  function resetTrackShape(){
+    controlY = controlX.map(defaultY);
+    msg('Track reshaped back to the default curve.');
+    resetRobot();
+    render();
+  }
+  function toggleEditMode(){
+    editMode=!editMode;
+    document.getElementById('line-edit-btn').classList.toggle('active', editMode);
+    document.getElementById('line-edit-hint').style.display = editMode ? 'block' : 'none';
+    render();
+  }
+  function svgPoint(clientX,clientY){
+    const svgEl=document.getElementById('line-trackSvg');
+    const pt=svgEl.createSVGPoint();
+    pt.x=clientX; pt.y=clientY;
+    const ctm=svgEl.getScreenCTM().inverse();
+    return pt.matrixTransform(ctm);
+  }
+  function startDrag(i, evt){
+    if(!editMode) return;
+    dragIndex=i;
+    evt.preventDefault();
+  }
+  function onPointerMove(evt){
+    if(dragIndex<0) return;
+    const touch = evt.touches ? evt.touches[0] : evt;
+    const p=svgPoint(touch.clientX, touch.clientY);
+    controlY[dragIndex]=Math.max(Y_MIN, Math.min(Y_MAX, p.y));
+    render();
+  }
+  function onPointerUp(){ dragIndex=-1; }
+  document.addEventListener('mousemove', onPointerMove);
+  document.addEventListener('mouseup', onPointerUp);
+  document.addEventListener('touchmove', onPointerMove, {passive:true});
+  document.addEventListener('touchend', onPointerUp);
+
+  const BAND_W=80/3;
+  const OFFTRACK=1.5*BAND_W;
+  const COLORS=['red','blue','green'];
+  function colorIdx(c){ return COLORS.indexOf(c); }
+  function classify(offset){
+    if(Math.abs(offset)>OFFTRACK) return 'off';
+    if(offset<-BAND_W/2) return 'red';
+    if(offset>BAND_W/2) return 'green';
+    return 'blue';
+  }
+
+  let ALPHA=0.5, GAMMA=0.9, EPS=0.2;
+  const TURN=0.16, STEP_DIST=10, MAXSTEPS=220;
+  let blueReward=1, sideReward=0.1, offPenalty=-5;
+  const FINISH_BONUS=20;
+  let speedLevel=6;
+  let isAnimating=false;
+  let episodesTrained=0;
+  let logLines=[];
+  let Q=Array.from({length:3},()=>[0,0,0]);
+
+  let rx,ry,rtheta,trail=[];
+  function resetRobot(){
+    rx=X0; ry=centerlineY(X0); rtheta=Math.atan(centerlineSlope(X0)); trail=[];
+  }
+  resetRobot();
+
+  function argmax(a){ let bi=0; for(let i=1;i<a.length;i++){ if(a[i]>a[bi]) bi=i; } return bi; }
+  function stateIdx(cur){ return colorIdx(cur); }
+  function effEps(){ return EPS*Math.max(0.05, 1-episodesTrained/2000); }
+  function effAlpha(){ return ALPHA*Math.max(0.15, 1-episodesTrained/3000); }
+
+  function doMove(action){
+    rtheta += action===0 ? -TURN : action===2 ? TURN : 0;
+    rx += STEP_DIST*Math.cos(rtheta);
+    ry += STEP_DIST*Math.sin(rtheta);
+    trail.push({x:rx,y:ry});
+    if(trail.length>50) trail.shift();
+    const offset = ry-centerlineY(rx);
+    const color = classify(offset);
+    let reward, done=false;
+    if(color==='off'){ reward=offPenalty; done=true; }
+    else if(color==='blue'){ reward=blueReward; }
+    else { reward=sideReward; }
+    if(color!=='off' && rx>=X1){ reward+=FINISH_BONUS; done=true; }
+    return {color, reward, done};
+  }
+
+  function setParam(name,val,outId){
+    const v=parseFloat(val);
+    if(name==='ALPHA') ALPHA=v;
+    if(name==='GAMMA') GAMMA=v;
+    if(name==='EPS') EPS=v;
+    document.getElementById(outId).textContent=v.toFixed(2);
+  }
+  function setSpeed(v){ speedLevel=parseInt(v); document.getElementById('line-speed-out').textContent=speedLevel; }
+  function getDelay(){ return 260-speedLevel*22; }
+  function setReward(name,val){
+    const v=parseFloat(val);
+    if(name==='blueReward') blueReward=v;
+    if(name==='sideReward') sideReward=v;
+    if(name==='offPenalty') offPenalty=v;
+  }
+
+  function resetQ(){
+    if(isAnimating){ msg('Hang on for the current episode to finish.'); return; }
+    Q=Array.from({length:3},()=>[0,0,0]);
+    episodesTrained=0;
+    logLines=[];
+    resetRobot();
+    msg('Q-table reset.');
+    render();
+  }
+
+  function trainBulk(n){
+    if(isAnimating){ msg('Hang on for the current episode to finish.'); return; }
+    let successes=0;
+    for(let e=0;e<n;e++){
+      resetRobot();
+      let curColor='blue', t=0, done=false;
+      while(!done && t<MAXSTEPS){
+        const s=stateIdx(curColor);
+        const a = Math.random()<effEps() ? Math.floor(Math.random()*3) : argmax(Q[s]);
+        const {color,reward,done:d}=doMove(a);
+        const nextColor=color==='off'?curColor:color;
+        const nextS=stateIdx(nextColor);
+        const maxNext=Math.max(...Q[nextS]);
+        Q[s][a]+=effAlpha()*(reward+GAMMA*maxNext-Q[s][a]);
+        curColor=nextColor;
+        done=d; t++;
+        if(d && reward>=FINISH_BONUS) successes++;
+      }
+      episodesTrained++;
+    }
+    logLines=['Ran '+n+' episodes. '+successes+' of '+n+' reached the finish line.'];
+    resetRobot();
+    msg('Trained '+episodesTrained+' total episodes.');
+    render();
+  }
+
+  function train(){
+    if(isAnimating){ msg('Hang on for the current episode to finish.'); return; }
+    const el=document.getElementById('line-episode-input');
+    const n=parseInt(el.value,10)||0;
+    if(n<=0){ msg('Enter a number of episodes, then click Train.'); return; }
+    if(n===1){ runEpisodeAnimated(); }
+    else { trainBulk(n); }
+  }
+
+  function runEpisodeAnimated(){
+    if(isAnimating){ msg('Hang on for the current episode to finish.'); return; }
+    isAnimating=true;
+    logLines=[];
+    resetRobot();
+    let curColor='blue', t=0;
+    render();
+
+    function step(){
+      if(t>=MAXSTEPS){
+        isAnimating=false; episodesTrained++;
+        msg('Ran out of steps. Episodes trained: '+episodesTrained+'.');
+        render();
+        return;
+      }
+      setTimeout(()=>{
+        const s=stateIdx(curColor);
+        const a = Math.random()<effEps() ? Math.floor(Math.random()*3) : argmax(Q[s]);
+        const {color,reward,done}=doMove(a);
+        const nextColor = color==='off'?curColor:color;
+        const nextS=stateIdx(nextColor);
+        const before=Q[s][a];
+        const maxNext=Math.max(...Q[nextS]);
+        Q[s][a]+=effAlpha()*(reward+GAMMA*maxNext-Q[s][a]);
+        const after=Q[s][a];
+        const ACT=['turn left','straight','turn right'];
+        logLines.unshift(curColor+'  '+ACT[a]+'  reward '+(reward>=0?'+':'')+reward.toFixed(1)+'  Q: '+before.toFixed(2)+'\u2192'+after.toFixed(2));
+        logLines=logLines.slice(0,8);
+        curColor=nextColor; t++;
+        render();
+        if(done){
+          isAnimating=false; episodesTrained++;
+          msg(color==='off' ? 'Fell off the track after '+t+' steps.' : 'Reached the finish line in '+t+' steps!');
+          render();
+          return;
+        }
+        step();
+      }, getDelay());
+    }
+    step();
+  }
+
+  function testPolicy(){
+    if(isAnimating){ msg('Hang on for the current run to finish.'); return; }
+    isAnimating=true;
+    logLines=['Testing learned policy — no exploration, no learning.'];
+    resetRobot();
+    let curColor='blue', t=0;
+    render();
+
+    function step(){
+      if(t>=MAXSTEPS){
+        isAnimating=false;
+        msg('Test ran out of steps without reaching the finish line.');
+        render();
+        return;
+      }
+      setTimeout(()=>{
+        const s=stateIdx(curColor);
+        const a = argmax(Q[s]);
+        const {color,reward,done}=doMove(a);
+        const nextColor = color==='off'?curColor:color;
+        const ACT=['turn left','straight','turn right'];
+        logLines.unshift(curColor+'  '+ACT[a]+'  (greedy, no update)');
+        logLines=logLines.slice(0,8);
+        curColor=nextColor; t++;
+        render();
+        if(done){
+          isAnimating=false;
+          msg(color==='off' ? 'Test failed — fell off the track after '+t+' steps.' : 'Test succeeded — reached the finish line in '+t+' steps.');
+          render();
+          return;
+        }
+        step();
+      }, getDelay());
+    }
+    step();
+  }
+
+  function msg(t){ document.getElementById('line-msg').textContent=t; }
+
+  function render(){
+    const statsEl=document.getElementById('line-stats');
+    statsEl.innerHTML =
+      '<span>Episodes trained: '+episodesTrained+'</span>'+
+      '<span>Progress: '+Math.max(0,Math.min(100,Math.round((rx-X0)/(X1-X0)*100)))+'%</span>'+
+      '<span>Effective &epsilon;: '+effEps().toFixed(2)+'</span>'+
+      '<span>Effective &alpha;: '+effAlpha().toFixed(2)+'</span>';
+
+    const offset=ry-centerlineY(rx);
+    const curColor=classify(offset);
+    const badgeMap={
+      red:['#fcebeb','#a32d2d','Red'],
+      blue:['#e6f1fb','#185fa5','Blue'],
+      green:['#eaf3de','#3b6d11','Green'],
+      off:['var(--surface-2)','var(--text-muted)','Off track']
+    };
+    const [bg,fg,label]=badgeMap[curColor];
+    const badge=document.getElementById('line-sensorBadge');
+    badge.style.background=bg; badge.style.color=fg; badge.textContent=label;
+
+    let trailSvg='';
+    for(const p of trail){
+      trailSvg+='<circle cx="'+p.x.toFixed(1)+'" cy="'+p.y.toFixed(1)+'" r="1.6" fill="var(--text-muted)" opacity="0.35"/>';
+    }
+
+    const deg=(rtheta*180/Math.PI).toFixed(1);
+    const treadPhase=((rx*0.8)%6+6)%6;
+    function treadTicks(yPos){
+      let s='';
+      for(let i=-2;i<4;i++){
+        const tx=-9+i*6+treadPhase;
+        if(tx>-8.5 && tx<8.5){
+          s+='<rect x="'+tx.toFixed(1)+'" y="'+yPos+'" width="1.6" height="4" rx="0.5" fill="var(--bg)" opacity="0.5"/>';
+        }
+      }
+      return s;
+    }
+    const robotSvg='<g transform="translate('+rx.toFixed(1)+','+ry.toFixed(1)+') rotate('+deg+')">'+
+      '<rect x="-9" y="-7" width="18" height="4" rx="1.5" fill="var(--text-secondary)"/>'+
+      treadTicks(-7)+
+      '<rect x="-9" y="3" width="18" height="4" rx="1.5" fill="var(--text-secondary)"/>'+
+      treadTicks(3)+
+      '<rect x="-6" y="-4" width="13" height="8" rx="2" fill="var(--accent)"/>'+
+      '<circle cx="1" cy="0" r="3.6" fill="var(--accent)" stroke="var(--bg)" stroke-width="0.7"/>'+
+      '<line x1="1" y1="0" x2="13" y2="0" stroke="var(--accent)" stroke-width="2" stroke-linecap="round"/>'+
+      '</g>';
+
+    const startY=centerlineY(X0), endY=centerlineY(X1);
+    const markers=
+      '<line x1="'+X0+'" y1="'+(startY-OFFTRACK-14)+'" x2="'+X0+'" y2="'+(startY+OFFTRACK+14)+'" stroke="var(--text-muted)" stroke-dasharray="4 4" stroke-width="1"/>'+
+      '<line x1="'+X1+'" y1="'+(endY-OFFTRACK-14)+'" x2="'+X1+'" y2="'+(endY+OFFTRACK+14)+'" stroke="var(--text-muted)" stroke-dasharray="4 4" stroke-width="1"/>';
+
+    let handlesSvg='';
+    if(editMode){
+      for(let i=0;i<N_POINTS;i++){
+        handlesSvg+='<line x1="'+controlX[i]+'" y1="'+Y_MIN+'" x2="'+controlX[i]+'" y2="'+Y_MAX+'" stroke="var(--text-muted)" stroke-dasharray="2 3" stroke-width="1" opacity="0.4"/>'+
+          '<circle cx="'+controlX[i]+'" cy="'+controlY[i]+'" r="7" fill="var(--bg)" stroke="var(--accent)" stroke-width="2" style="cursor:ns-resize" onmousedown="Line.startDrag('+i+',event)" ontouchstart="Line.startDrag('+i+',event)"/>';
+      }
+    }
+
+    document.getElementById('line-trackSvg').innerHTML =
+      '<path d="'+bezierSegments(-BAND_W)+'" stroke="#d64545" stroke-width="'+BAND_W+'" fill="none" stroke-linecap="round"/>'+
+      '<path d="'+bezierSegments(BAND_W)+'" stroke="#4caf50" stroke-width="'+BAND_W+'" fill="none" stroke-linecap="round"/>'+
+      '<path d="'+bezierSegments(0)+'" stroke="#3b82d8" stroke-width="'+BAND_W+'" fill="none" stroke-linecap="round"/>'+
+      markers + trailSvg + (editMode ? '' : robotSvg) + handlesSvg;
+
+    const rowLabels=['Red','Blue','Green'];
+    let tableHtml='<tr><th style="text-align:left;">sensor color</th><th>turn left</th><th>straight</th><th>turn right</th></tr>';
+    for(let s=0;s<3;s++){
+      tableHtml+='<tr><td style="text-align:left;color:var(--text-secondary);">'+rowLabels[s]+'</td>';
+      for(let a=0;a<3;a++){
+        const v=Q[s][a];
+        let bg2='var(--surface)', col='var(--text-muted)';
+        if(v>0.15){ bg2='var(--success-bg)'; col='var(--success)'; }
+        else if(v<-0.15){ bg2='var(--danger-bg)'; col='var(--danger)'; }
+        tableHtml+='<td style="background:'+bg2+';color:'+col+';">'+v.toFixed(2)+'</td>';
+      }
+      tableHtml+='</tr>';
+    }
+    document.getElementById('line-qtable').innerHTML=tableHtml;
+
+    document.getElementById('line-log').innerHTML=logLines.map(l=>'<div>'+l+'</div>').join('');
+  }
+
+  render();
+
+  return { train, testPolicy, resetQ, setParam, setSpeed, setReward, toggleEditMode, resetTrackShape, startDrag };
+})();
+</script>
+
+
+</body>
+</html>

@@ -32,35 +32,22 @@ KIND_DOT = {
     "controller": HexColor("#1e4f82"),
 }
 
-# user-facing description + accent color, keyed by behavior key
+# The deck: which cards to print (in order) + their accent color and blurb.
+# Each key must be a behavior in behaviors/__init__.py (NAME + REQUIRED are
+# pulled from the code). Edit this dict to change which cards get printed.
 CARDS = {
     "tank_drive":      ("#1e4f82", "Left stick drives the left wheel, right stick the right. "
                                    "Push both to go straight, opposite to spin on the spot."),
     "arcade_drive":    ("#1e4f82", "Right stick is the gas, left stick steers. "
                                    "Easy one-hand driving."),
-    "gyro_drive":      ("#1e4f82", "Push forward and it drives perfectly straight on its own. "
-                                   "Nudge the left stick to steer; it holds the new heading."),
     "precision_turn":  ("#163a61", "Flick the right stick left or right to spin exactly in place. "
                                    "It beeps when the turn is finished."),
-    "tilt_steer":      ("#163a61", "Right stick is the throttle — steer by tilting the "
-                                   "whole robot left and right."),
-    "line_follower":   ("#2a7d8c", "Set it on the edge of a dark line and it follows the line "
-                                   "by itself. Beeps if it loses the line."),
     "color_gearbox":   ("#2a7d8c", "Show it a color to pick a gear — green = fast, "
                                    "yellow = half, red = reverse — then drive as normal."),
-    "motor_knob":      ("#f57d20", "Turn the single motor by hand like a dial to set the "
-                                   "drive motor's speed. One motor controls the other."),
-    "light_theremin":  ("#2a9d8f", "Wave your hand over the color sensor — brighter light "
-                                   "spins the motor faster, like a theremin."),
-    "spin":            ("#f57d20", "Spins the motor continuously. Simple and satisfying."),
-    "color_soundboard":("#8e44ad", "Each color you show the sensor plays a different note. "
-                                   "Make a little tune with colored cards."),
-    "simon_says":      ("#8e44ad", "The sensor beeps out a color sequence — repeat it by "
-                                   "showing the colors in order. It grows each round."),
-    "radar":           ("#c0392b", "The sensor sweeps side to side and beeps faster the closer "
-                                   "something gets — like a car parking sensor."),
-    "gesture_drum":    ("#8e44ad", "Tap, shake or bump the double motor to play drum sounds. "
-                                   "The left stick changes the pitch."),
+    "motor_knob":      ("#f57d20", "Turn the single motor by hand and the drive motor copies "
+                                   "it, moving to the same position. Let go and it holds."),
+    "dance":           ("#8e44ad", "Put wheels on a Double Motor. The Double Motor is "
+                                   "preprogramed to dance. Watch and enjoy!"),
 }
 
 PAGE_W, PAGE_H = letter
@@ -180,7 +167,10 @@ def main():
     c.setTitle("Puck Behavior Cards")
 
     per_page = COLS * ROWS
-    keys = list(BEHAVIORS.keys())
+    keys = [k for k in CARDS if k in BEHAVIORS]   # the deck, in CARDS order
+    missing = [k for k in CARDS if k not in BEHAVIORS]
+    if missing:
+        print("warning: skipping cards with no matching behavior:", missing)
     for i, key in enumerate(keys):
         slot = i % per_page
         if i and slot == 0:

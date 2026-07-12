@@ -89,6 +89,7 @@ DEVICE_NOTIFICATION_REQUEST = 40
 DEVICE_NOTIFICATION = 60
 PLAY_BEEP_COMMAND = 112
 MOTOR_RUN_COMMAND = 122
+MOTOR_RUN_TO_ABSOLUTE_POSITION_COMMAND = 128
 MOTOR_STOP_COMMAND = 138
 MOTOR_SET_SPEED_COMMAND = 140
 MOVEMENT_MOVE_COMMAND = 150
@@ -100,6 +101,7 @@ MOTOR_BITS_LEFT = 1
 MOTOR_BITS_BOTH = 3
 MOTOR_DIR_CW = 0
 MOTOR_DIR_CCW = 1
+MOTOR_DIR_SHORTEST = 2
 MOVE_DIR_FWD = 0
 MOVE_DIR_BACK = 1
 
@@ -144,6 +146,12 @@ def cmd_play_beep(pattern=0, frequency=440, count=1):
 
 def cmd_motor_run(bit_mask, direction):
     return _frame(MOTOR_RUN_COMMAND, struct.pack("<BB", bit_mask, direction))
+
+
+def cmd_motor_run_to_position(bit_mask, position, direction=MOTOR_DIR_SHORTEST):
+    # absolute angle 0..359; the hub drives there and holds
+    return _frame(MOTOR_RUN_TO_ABSOLUTE_POSITION_COMMAND,
+                  struct.pack("<BHB", int(bit_mask), int(position) % 360, int(direction)))
 
 
 def cmd_motor_stop(bit_mask):
@@ -295,6 +303,12 @@ class LegoDevice:
 
     def move_tank(self, left, right):
         self._send(cmd_movement_move_tank(left, right))
+
+    def run_to_position(self, degrees, direction=MOTOR_DIR_SHORTEST):
+        """Drive to an absolute shaft angle (0-359) and hold there — the motor's
+        own hub does the closed-loop control."""
+        mask = MOTOR_BITS_BOTH if self.kind == KIND_DOUBLE else MOTOR_BITS_LEFT
+        self._send(cmd_motor_run_to_position(mask, degrees, direction))
 
     def stop(self):
         if self.kind == KIND_DOUBLE:
