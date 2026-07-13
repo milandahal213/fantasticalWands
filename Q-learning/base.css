@@ -1,0 +1,52 @@
+/* base.css — shared design tokens & page shell. Used by index.html, maze.html, line-follower.html */
+  :root {
+    --bg: #ffffff;
+    --surface: #f7f6f3;
+    --surface-2: #efeee9;
+    --border: #ddd9d0;
+    --text: #1f1e1c;
+    --text-secondary: #5f5e5a;
+    --text-muted: #918f88;
+    --accent: #185fa5;
+    --accent-bg: #e6f1fb;
+    --success: #3b6d11;
+    --success-bg: #eaf3de;
+    --danger: #a32d2d;
+    --danger-bg: #fcebeb;
+    --start: #1a7d3c;
+    --start-bg: #d8f0dd;
+    --goal: #b8590a;
+    --goal-bg: #fce9d3;
+    --mono: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #171614;
+      --surface: #211f1c;
+      --surface-2: #2a2825;
+      --border: #3a3833;
+      --text: #ece9e2;
+      --text-secondary: #b4b2a9;
+      --text-muted: #7c7a73;
+      --accent: #85b7eb;
+      --accent-bg: #0c447c;
+      --success: #97c459;
+      --success-bg: #27500a;
+      --danger: #f09595;
+      --danger-bg: #791f1f;
+      --start: #7fdb9c;
+      --start-bg: #133c22;
+      --goal: #f5a95a;
+      --goal-bg: #4a2c0e;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    max-width: 780px;
+    margin: 0 auto;
+    padding: 40px 20px 80px;
+    line-height: 1.6;
+  }
