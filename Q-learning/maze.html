@@ -5,7 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Q-learning maze — interactive simulator</title>
 <style>
-<style>
   :root {
     --bg: #ffffff;
     --surface: #f7f6f3;
@@ -339,7 +338,6 @@
     padding-top: 16px;
   }
 </style>
-</style>
 </head>
 <body>
 
@@ -421,7 +419,10 @@
           <button class="seg-btn" id="maze-mode-start-btn" onclick="Maze.setClickMode('start')">&#127968; Move Start</button>
           <button class="seg-btn" id="maze-mode-track-btn" onclick="Maze.setClickMode('track')">&#128200; Track Cell</button>
         </div>
-        <button class="reset-btn" onclick="Maze.resetAll()">Reset Q-table</button>
+        <div style="display:flex;gap:8px;">
+          <button onclick="Maze.openMazeEditor()">&#128736; Edit Maze</button>
+          <button class="reset-btn" onclick="Maze.resetAll()">Reset Q-table</button>
+        </div>
       </div>
 
       <div id="maze-stats" class="stats-row"></div>
@@ -464,6 +465,35 @@
   </div>
 </div>
 
+<div id="maze-editor-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:1000;align-items:center;justify-content:center;padding:20px;">
+  <div style="background:var(--bg);border-radius:14px;padding:22px;max-width:420px;width:100%;max-height:90vh;overflow-y:auto;box-sizing:border-box;">
+    <h3 style="margin:0 0 4px;font-size:16px;color:var(--text);">Design your maze</h3>
+    <p style="font-size:12.5px;color:var(--text-secondary);margin:0 0 14px;">Pick a size, then click cells to toggle walls. Use the buttons below to place the start and goal.</p>
+    <div style="display:flex;gap:10px;align-items:flex-end;margin-bottom:12px;">
+      <div>
+        <label style="font-size:11.5px;color:var(--text-secondary);display:block;margin-bottom:3px;">Rows</label>
+        <input type="number" id="maze-editor-rows" min="3" max="10" value="6" style="width:60px;padding:5px 6px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);">
+      </div>
+      <div>
+        <label style="font-size:11.5px;color:var(--text-secondary);display:block;margin-bottom:3px;">Columns</label>
+        <input type="number" id="maze-editor-cols" min="3" max="10" value="6" style="width:60px;padding:5px 6px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);">
+      </div>
+      <button onclick="Maze.resizeEditor()">Resize</button>
+    </div>
+    <div class="segmented" style="margin-bottom:12px;">
+      <button class="seg-btn active" id="maze-editor-mode-wall" onclick="Maze.setEditorMode('wall')">Walls</button>
+      <button class="seg-btn" id="maze-editor-mode-start" onclick="Maze.setEditorMode('start')">&#127968; Start</button>
+      <button class="seg-btn" id="maze-editor-mode-goal" onclick="Maze.setEditorMode('goal')">&#127937; Goal</button>
+    </div>
+    <div id="maze-editor-grid" style="display:grid;gap:3px;margin-bottom:10px;"></div>
+    <p id="maze-editor-msg" style="font-size:11.5px;color:var(--danger);min-height:16px;margin:0 0 10px;"></p>
+    <div style="display:flex;justify-content:space-between;">
+      <button onclick="Maze.closeMazeEditor()">Cancel</button>
+      <button class="primary-btn" onclick="Maze.saveMazeEditor()">Save Maze</button>
+    </div>
+  </div>
+</div>
+
 <h2>Try this</h2>
 <p>
   1. Train for a while, then walk the path — the agent should glide straight to the goal.<br>
@@ -481,8 +511,8 @@
 
 <script>
 const Maze = (function(){
-  const ROWS=6, COLS=6;
-  const maze=[
+  let ROWS=6, COLS=6;
+  let maze=[
   0,0,0,1,0,0,
   0,1,0,1,0,0,
   0,1,0,0,0,1,
@@ -506,7 +536,7 @@ const Maze = (function(){
   let expandedLogId=null;
   let ALPHA=0.5, GAMMA=0.9, EPS=0.2;
   let goalReward=10, wallPenalty=-1, stepPenalty=-0.1;
-  const MAXSTEPS=60;
+  let MAXSTEPS=60;
   const DELTA=[[-1,0],[1,0],[0,-1],[0,1]];
   const ARROWS=['\u2191','\u2193','\u2190','\u2192'];
   const NAMES=['up','down','left','right'];
@@ -518,6 +548,10 @@ const Maze = (function(){
   let qHistory=[];
   let trackedCell=0;
   let Q=Array.from({length:ROWS*COLS},()=>[0,0,0,0]);
+  let editorRows=ROWS, editorCols=COLS;
+  let editorMaze=maze.slice();
+  let editorStart=START, editorGoal=goal;
+  let editorMode='wall';
 
   function directionDeg(fromIdx,toIdx){
     const [r0,c0]=rc(fromIdx), [r1,c1]=rc(toIdx);
@@ -819,6 +853,124 @@ const Maze = (function(){
     render();
   }
 
+  function isReachable(m, rows, cols, start, goalIdx){
+    const seen=new Set([start]);
+    const queue=[start];
+    const rcOf=i=>[Math.floor(i/cols), i%cols];
+    const idxOf=(r,c)=>r*cols+c;
+    while(queue.length){
+      const cur=queue.shift();
+      if(cur===goalIdx) return true;
+      const [r,c]=rcOf(cur);
+      const deltas=[[-1,0],[1,0],[0,-1],[0,1]];
+      for(const [dr,dc] of deltas){
+        const nr=r+dr, nc=c+dc;
+        if(nr<0||nr>=rows||nc<0||nc>=cols) continue;
+        const ni=idxOf(nr,nc);
+        if(m[ni]===1||seen.has(ni)) continue;
+        seen.add(ni);
+        queue.push(ni);
+      }
+    }
+    return false;
+  }
+
+  function openMazeEditor(){
+    editorRows=ROWS; editorCols=COLS;
+    editorMaze=maze.slice();
+    editorStart=START; editorGoal=goal;
+    editorMode='wall';
+    document.getElementById('maze-editor-rows').value=editorRows;
+    document.getElementById('maze-editor-cols').value=editorCols;
+    document.getElementById('maze-editor-msg').textContent='';
+    setEditorMode('wall');
+    renderEditor();
+    document.getElementById('maze-editor-modal').style.display='flex';
+  }
+
+  function closeMazeEditor(){
+    document.getElementById('maze-editor-modal').style.display='none';
+  }
+
+  function setEditorMode(mode){
+    editorMode=mode;
+    document.getElementById('maze-editor-mode-wall').classList.toggle('active', mode==='wall');
+    document.getElementById('maze-editor-mode-start').classList.toggle('active', mode==='start');
+    document.getElementById('maze-editor-mode-goal').classList.toggle('active', mode==='goal');
+  }
+
+  function resizeEditor(){
+    const r=Math.max(3, Math.min(10, parseInt(document.getElementById('maze-editor-rows').value,10)||6));
+    const c=Math.max(3, Math.min(10, parseInt(document.getElementById('maze-editor-cols').value,10)||6));
+    editorRows=r; editorCols=c;
+    document.getElementById('maze-editor-rows').value=r;
+    document.getElementById('maze-editor-cols').value=c;
+    editorMaze=new Array(r*c).fill(0);
+    editorStart=0;
+    editorGoal=r*c-1;
+    document.getElementById('maze-editor-msg').textContent='';
+    renderEditor();
+  }
+
+  function toggleEditorCell(i){
+    if(editorMode==='wall'){
+      if(i===editorStart||i===editorGoal) return;
+      editorMaze[i]=editorMaze[i]?0:1;
+    } else if(editorMode==='start'){
+      if(editorMaze[i]===1||i===editorGoal) return;
+      editorStart=i;
+    } else if(editorMode==='goal'){
+      if(editorMaze[i]===1||i===editorStart) return;
+      editorGoal=i;
+    }
+    document.getElementById('maze-editor-msg').textContent='';
+    renderEditor();
+  }
+
+  function renderEditor(){
+    const gridEl=document.getElementById('maze-editor-grid');
+    gridEl.style.gridTemplateColumns='repeat('+editorCols+',1fr)';
+    gridEl.style.aspectRatio=editorCols+'/'+editorRows;
+    let html='';
+    for(let i=0;i<editorRows*editorCols;i++){
+      const isWall=editorMaze[i]===1;
+      const isStart=i===editorStart;
+      const isGoal=i===editorGoal;
+      let bg='var(--surface-2)', content='';
+      if(isWall){ bg='var(--surface)'; }
+      else if(isStart){ bg='var(--start-bg)'; content='<span style="color:var(--start);font-size:11px;">&#127968;</span>'; }
+      else if(isGoal){ bg='var(--goal-bg)'; content='<span style="color:var(--goal);font-size:11px;">&#9873;</span>'; }
+      html+='<div onclick="Maze.toggleEditorCell('+i+')" style="aspect-ratio:1;background:'+bg+';border:0.5px solid var(--border);border-radius:3px;cursor:pointer;display:flex;align-items:center;justify-content:center;'+(isWall?'opacity:0.6;':'')+'">'+content+'</div>';
+    }
+    gridEl.innerHTML=html;
+  }
+
+  function saveMazeEditor(){
+    if(!isReachable(editorMaze, editorRows, editorCols, editorStart, editorGoal)){
+      document.getElementById('maze-editor-msg').textContent='Warning: the goal isn\u2019t reachable from the start with these walls. Saving anyway, but training won\u2019t succeed until you fix the path.';
+    }
+    ROWS=editorRows; COLS=editorCols;
+    maze=editorMaze.slice();
+    START=editorStart; goal=editorGoal;
+    trainedGoal=null;
+    MAXSTEPS=Math.max(60, ROWS*COLS*3);
+    Q=Array.from({length:ROWS*COLS},()=>[0,0,0,0]);
+    episodesTrained=0;
+    agentPos=null;
+    facingDeg=0;
+    lastActionLabel='';
+    lastTouched=new Set();
+    logLines=[];
+    expandedLogId=null;
+    epStepCount=0;
+    epExploreCount=0;
+    qHistory=[];
+    trackedCell=START;
+    closeMazeEditor();
+    msg('New maze saved — '+ROWS+' rows by '+COLS+' columns. Train the agent to learn it.');
+    render();
+  }
+
   function walkGreedy(){
     if(isAnimating){ msg('Hang on for the current episode to finish.'); return; }
     if(episodesTrained===0){ msg('Train the agent first.'); return; }
@@ -970,6 +1122,8 @@ const Maze = (function(){
       (stale ? '<span class="stale">Policy is stale for this goal</span>' : '');
 
     const gridEl=document.getElementById('maze-grid');
+    gridEl.style.gridTemplateColumns='repeat('+COLS+',1fr)';
+    gridEl.style.aspectRatio=COLS+'/'+ROWS;
     let html='';
     for(let i=0;i<ROWS*COLS;i++){
       const isWall=maze[i]===1;
@@ -1069,7 +1223,7 @@ const Maze = (function(){
   drawGammaChart();
   render();
 
-  return { train, walkGreedy, resetAll, setClickMode, handleCellClick, setParam, setSpeed, setReward, toggleLogDetail };
+  return { train, walkGreedy, resetAll, setClickMode, handleCellClick, setParam, setSpeed, setReward, toggleLogDetail, openMazeEditor, closeMazeEditor, setEditorMode, resizeEditor, toggleEditorCell, saveMazeEditor };
 })();
 </script>
 
