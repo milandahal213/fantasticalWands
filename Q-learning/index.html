@@ -4,141 +4,106 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Q-learning — an interactive introduction</title>
-<style>
-  :root {
-    --bg: #ffffff;
-    --surface: #f7f6f3;
-    --surface-2: #efeee9;
-    --border: #ddd9d0;
-    --text: #1f1e1c;
-    --text-secondary: #5f5e5a;
-    --text-muted: #918f88;
-    --accent: #185fa5;
-    --accent-bg: #e6f1fb;
-    --success: #3b6d11;
-    --success-bg: #eaf3de;
-    --danger: #a32d2d;
-    --danger-bg: #fcebeb;
-    --start: #1a7d3c;
-    --start-bg: #d8f0dd;
-    --goal: #b8590a;
-    --goal-bg: #fce9d3;
-    --mono: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #171614;
-      --surface: #211f1c;
-      --surface-2: #2a2825;
-      --border: #3a3833;
-      --text: #ece9e2;
-      --text-secondary: #b4b2a9;
-      --text-muted: #7c7a73;
-      --accent: #85b7eb;
-      --accent-bg: #0c447c;
-      --success: #97c459;
-      --success-bg: #27500a;
-      --danger: #f09595;
-      --danger-bg: #791f1f;
-      --start: #7fdb9c;
-      --start-bg: #133c22;
-      --goal: #f5a95a;
-      --goal-bg: #4a2c0e;
-    }
-  }
-  * { box-sizing: border-box; }
-  body {
-    background: var(--bg);
-    color: var(--text);
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    max-width: 780px;
-    margin: 0 auto;
-    padding: 40px 20px 80px;
-    line-height: 1.6;
-  }
-  h1 { font-size: 30px; font-weight: 600; margin-bottom: 4px; }
-  .subtitle { color: var(--text-secondary); font-size: 16px; margin-bottom: 32px; }
-  h2 { font-size: 19px; font-weight: 600; margin-top: 44px; margin-bottom: 10px; }
-  p { font-size: 15px; color: var(--text-secondary); margin: 8px 0 16px; }
-  a { color: var(--accent); }
-  .card {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 14px;
-    padding: 20px 24px;
-    margin-top: 16px;
-  }
-  code {
-    font-family: var(--mono);
-    background: var(--surface-2);
-    padding: 1px 5px;
-    border-radius: 4px;
-    font-size: 13px;
-  }
-  ul.reading { padding-left: 20px; }
-  ul.reading li { font-size: 15px; color: var(--text-secondary); margin: 6px 0; }
-  .diagram-caption {
-    text-align: center;
-    font-size: 12.5px;
-    color: var(--text-muted);
-    margin-top: -6px;
-  }
-
-  .sim-cards {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-    gap: 20px;
-    margin-top: 20px;
-  }
-  .sim-card {
-    display: block;
-    text-decoration: none;
-    color: var(--text);
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 14px;
-    overflow: hidden;
-    transition: border-color .15s, transform .1s;
-  }
-  .sim-card:hover { border-color: var(--accent); }
-  .sim-card:active { transform: scale(0.99); }
-  .sim-card .thumb {
-    width: 100%;
-    aspect-ratio: 16/9;
-    background: var(--surface-2);
-    display: block;
-  }
-  .sim-card .sim-card-body { padding: 16px 18px 20px; }
-  .sim-card h3 {
-    font-size: 17px;
-    font-weight: 600;
-    margin: 0 0 6px;
-    color: var(--text);
-  }
-  .sim-card p {
-    font-size: 13.5px;
-    color: var(--text-secondary);
-    margin: 0 0 10px;
-  }
-  .sim-card .cta {
-    font-size: 13px;
-    font-weight: 500;
-    color: var(--accent);
-  }
-
-  footer {
-    margin-top: 56px;
-    font-size: 12.5px;
-    color: var(--text-muted);
-    border-top: 1px solid var(--border);
-    padding-top: 16px;
-  }
-</style>
+<link rel="stylesheet" href="base.css">
+<link rel="stylesheet" href="index.css">
 </head>
 <body>
 
-<h1>Q-learning, from scratch</h1>
-<p class="subtitle">What it is, how it works, and two interactive simulators you can train yourself.</p>
+<header class="hero">
+  <span class="eyebrow"><span class="pulse"></span>Interactive · Reinforcement learning</span>
+  <h1>Q-learning, from scratch</h1>
+  <p class="subtitle">Watch a table of zeros slowly turn into a working strategy. Three simulators you can train yourself — jump straight in, or read the theory first.</p>
+</header>
+
+<section class="sims">
+  <p class="sims-label">Train one yourself</p>
+  <div class="sim-cards">
+    <a class="sim-card" href="maze.html">
+      <svg class="thumb" viewBox="0 0 320 180" role="img" preserveAspectRatio="xMidYMid slice">
+        <title>Maze simulator thumbnail</title>
+        <rect width="320" height="180" fill="var(--surface-2)"/>
+        <g transform="translate(76,18)">
+          <rect x="0" y="0" width="168" height="144" rx="6" fill="none" stroke="var(--border)" stroke-width="1"/>
+          <rect x="0" y="0" width="28" height="24" fill="var(--start-bg)" stroke="var(--start)" stroke-width="1.5"/>
+          <rect x="28" y="24" width="28" height="24" fill="var(--surface)" stroke="var(--border)" stroke-width="0.5"/>
+          <rect x="56" y="0" width="28" height="24" fill="var(--text)" opacity="0.15"/>
+          <rect x="56" y="48" width="28" height="24" fill="var(--surface)" stroke="var(--border)" stroke-width="0.5"/>
+          <rect x="84" y="24" width="28" height="24" fill="var(--text)" opacity="0.15"/>
+          <rect x="84" y="72" width="28" height="24" fill="var(--surface)" stroke="var(--border)" stroke-width="0.5"/>
+          <rect x="112" y="48" width="28" height="24" fill="var(--surface)" stroke="var(--border)" stroke-width="0.5"/>
+          <rect x="112" y="96" width="28" height="24" fill="var(--text)" opacity="0.15"/>
+          <rect x="140" y="120" width="28" height="24" fill="var(--goal-bg)" stroke="var(--goal)" stroke-width="1.5"/>
+          <text x="154" y="136" text-anchor="middle" font-size="14" fill="var(--goal)">&#9873;</text>
+          <g transform="translate(14,12) rotate(45)">
+            <rect x="-9" y="-7" width="18" height="4" rx="1.5" fill="var(--text-secondary)"/>
+            <rect x="-9" y="3" width="18" height="4" rx="1.5" fill="var(--text-secondary)"/>
+            <rect x="-6" y="-4" width="13" height="8" rx="2" fill="var(--accent)"/>
+            <circle cx="1" cy="0" r="3.6" fill="var(--accent)" stroke="var(--bg)" stroke-width="0.7"/>
+            <line x1="1" y1="0" x2="13" y2="0" stroke="var(--accent)" stroke-width="2" stroke-linecap="round"/>
+          </g>
+        </g>
+      </svg>
+      <div class="sim-card-body">
+        <h3>Q-learning maze</h3>
+        <p>Train a tank to find the goal in a grid maze, watch the Q-table fill in live, then move the goal and see the policy break.</p>
+        <span class="cta">Open the maze simulator &rarr;</span>
+      </div>
+    </a>
+
+    <a class="sim-card" href="line-follower.html">
+      <svg class="thumb" viewBox="0 0 320 180" role="img" preserveAspectRatio="xMidYMid slice">
+        <title>Line-following robot simulator thumbnail</title>
+        <rect width="320" height="180" fill="var(--surface-2)"/>
+        <path d="M20 140 Q100 20 160 90 T300 40" fill="none" stroke="#d64545" stroke-width="26" stroke-linecap="round"/>
+        <path d="M20 140 Q100 20 160 90 T300 40" fill="none" stroke="#4caf50" stroke-width="26" stroke-linecap="round" transform="translate(0,18)"/>
+        <path d="M20 140 Q100 20 160 90 T300 40" fill="none" stroke="#3b82d8" stroke-width="26" stroke-linecap="round" transform="translate(0,9)"/>
+        <g transform="translate(95,68) rotate(-20)">
+          <rect x="-9" y="-7" width="18" height="4" rx="1.5" fill="var(--text-secondary)"/>
+          <rect x="-9" y="3" width="18" height="4" rx="1.5" fill="var(--text-secondary)"/>
+          <rect x="-6" y="-4" width="13" height="8" rx="2" fill="var(--accent)"/>
+          <circle cx="1" cy="0" r="3.6" fill="var(--accent)" stroke="var(--bg)" stroke-width="0.7"/>
+          <line x1="1" y1="0" x2="13" y2="0" stroke="var(--accent)" stroke-width="2" stroke-linecap="round"/>
+        </g>
+      </svg>
+      <div class="sim-card-body">
+        <h3>Line-following robot</h3>
+        <p>A three-color sensor, a curved track you can reshape yourself, and a tank that learns to stay centered through trial and error.</p>
+        <span class="cta">Open the line-follower simulator &rarr;</span>
+      </div>
+    </a>
+
+    <a class="sim-card" href="cliff-walking.html">
+      <svg class="thumb" viewBox="0 0 320 180" role="img" preserveAspectRatio="xMidYMid slice">
+        <title>Cliff walking simulator thumbnail</title>
+        <rect width="320" height="180" fill="var(--surface-2)"/>
+        <g transform="translate(40,44)">
+          <!-- cliff strip along the bottom -->
+          <rect x="0" y="72" width="240" height="24" rx="3" fill="var(--danger-bg)" stroke="var(--danger)" stroke-width="1"/>
+          <rect x="0" y="72" width="24" height="24" fill="var(--start-bg)" stroke="var(--start)" stroke-width="1.5"/>
+          <rect x="216" y="72" width="24" height="24" fill="var(--goal-bg)" stroke="var(--goal)" stroke-width="1.5"/>
+          <text x="228" y="89" text-anchor="middle" font-size="13" fill="var(--goal)">&#9873;</text>
+          <!-- Q-learning route: hugs the cliff edge -->
+          <path class="flow" d="M12 60 H228 V84" fill="none" stroke="var(--accent)" stroke-width="2.4" stroke-dasharray="5 3" stroke-linecap="round"/>
+          <!-- SARSA route: safe detour one row up -->
+          <path class="flow" d="M12 60 V12 H228 V84" fill="none" stroke="var(--success)" stroke-width="2.4" stroke-dasharray="5 3" stroke-linecap="round"/>
+          <g transform="translate(12,60)">
+            <rect x="-8" y="-6" width="16" height="3.5" rx="1.5" fill="var(--text-secondary)"/>
+            <rect x="-8" y="2.5" width="16" height="3.5" rx="1.5" fill="var(--text-secondary)"/>
+            <rect x="-5" y="-3.5" width="11" height="7" rx="2" fill="var(--accent)"/>
+            <circle cx="1" cy="0" r="3.2" fill="var(--accent)" stroke="var(--bg)" stroke-width="0.7"/>
+            <line x1="1" y1="0" x2="11" y2="0" stroke="var(--accent)" stroke-width="2" stroke-linecap="round"/>
+          </g>
+        </g>
+      </svg>
+      <div class="sim-card-body">
+        <h3>Cliff walking: Q-learning vs SARSA</h3>
+        <p>Run both algorithms on the same cliff-edge grid and watch one learn the risky shortest path while the other plays it safe.</p>
+        <span class="cta">Open the cliff-walking simulator &rarr;</span>
+      </div>
+    </a>
+  </div>
+  <p class="sims-hint">New to reinforcement learning? Here's the whole idea, from the ground up. &darr;</p>
+</section>
 
 <h2>What problem does this solve?</h2>
 <p>
@@ -201,7 +166,7 @@
   If the agent always picked the action its table currently rates highest, it could get stuck with a mediocre
   strategy just because that's what it happened to try first. So Q-learning usually mixes in some randomness —
   called <strong>&epsilon;-greedy</strong> exploration — taking a random action some percentage of the time,
-  purely to keep discovering whether something better exists. Both simulators below let you adjust this directly.
+  purely to keep discovering whether something better exists. All three simulators above let you adjust this directly.
 </p>
 
 <h2>Further reading</h2>
@@ -211,68 +176,6 @@
   <li><a href="http://incompleteideas.net/book/the-book-2nd.html">Sutton &amp; Barto, <em>Reinforcement Learning: An Introduction</em></a>, the standard textbook, free to read online.</li>
   <li><a href="https://en.wikipedia.org/wiki/Bellman_equation">Bellman equation — Wikipedia</a>, for where that update rule actually comes from.</li>
 </ul>
-
-<h2>Try it yourself</h2>
-<p>
-  Reading about it only gets you so far — Q-learning is much easier to understand once you've watched a table of
-  zeros slowly turn into a working strategy. Pick one below.
-</p>
-
-<div class="sim-cards">
-  <a class="sim-card" href="maze.html">
-    <svg class="thumb" viewBox="0 0 320 180" role="img" preserveAspectRatio="xMidYMid slice">
-      <title>Maze simulator thumbnail</title>
-      <rect width="320" height="180" fill="var(--surface-2)"/>
-      <g transform="translate(76,18)">
-        <rect x="0" y="0" width="168" height="144" rx="6" fill="none" stroke="var(--border)" stroke-width="1"/>
-        <rect x="0" y="0" width="28" height="24" fill="var(--start-bg)" stroke="var(--start)" stroke-width="1.5"/>
-        <rect x="28" y="24" width="28" height="24" fill="var(--surface)" stroke="var(--border)" stroke-width="0.5"/>
-        <rect x="56" y="0" width="28" height="24" fill="var(--text)" opacity="0.15"/>
-        <rect x="56" y="48" width="28" height="24" fill="var(--surface)" stroke="var(--border)" stroke-width="0.5"/>
-        <rect x="84" y="24" width="28" height="24" fill="var(--text)" opacity="0.15"/>
-        <rect x="84" y="72" width="28" height="24" fill="var(--surface)" stroke="var(--border)" stroke-width="0.5"/>
-        <rect x="112" y="48" width="28" height="24" fill="var(--surface)" stroke="var(--border)" stroke-width="0.5"/>
-        <rect x="112" y="96" width="28" height="24" fill="var(--text)" opacity="0.15"/>
-        <rect x="140" y="120" width="28" height="24" fill="var(--goal-bg)" stroke="var(--goal)" stroke-width="1.5"/>
-        <text x="154" y="136" text-anchor="middle" font-size="14" fill="var(--goal)">&#9873;</text>
-        <g transform="translate(14,12) rotate(45)">
-          <rect x="-9" y="-7" width="18" height="4" rx="1.5" fill="var(--text-secondary)"/>
-          <rect x="-9" y="3" width="18" height="4" rx="1.5" fill="var(--text-secondary)"/>
-          <rect x="-6" y="-4" width="13" height="8" rx="2" fill="var(--accent)"/>
-          <circle cx="1" cy="0" r="3.6" fill="var(--accent)" stroke="var(--bg)" stroke-width="0.7"/>
-          <line x1="1" y1="0" x2="13" y2="0" stroke="var(--accent)" stroke-width="2" stroke-linecap="round"/>
-        </g>
-      </g>
-    </svg>
-    <div class="sim-card-body">
-      <h3>Q-learning maze</h3>
-      <p>Train a tank to find the goal in a grid maze, watch the Q-table fill in live, then move the goal and see the policy break.</p>
-      <span class="cta">Open the maze simulator &rarr;</span>
-    </div>
-  </a>
-
-  <a class="sim-card" href="line-follower.html">
-    <svg class="thumb" viewBox="0 0 320 180" role="img" preserveAspectRatio="xMidYMid slice">
-      <title>Line-following robot simulator thumbnail</title>
-      <rect width="320" height="180" fill="var(--surface-2)"/>
-      <path d="M20 140 Q100 20 160 90 T300 40" fill="none" stroke="#d64545" stroke-width="26" stroke-linecap="round"/>
-      <path d="M20 140 Q100 20 160 90 T300 40" fill="none" stroke="#4caf50" stroke-width="26" stroke-linecap="round" transform="translate(0,18)"/>
-      <path d="M20 140 Q100 20 160 90 T300 40" fill="none" stroke="#3b82d8" stroke-width="26" stroke-linecap="round" transform="translate(0,9)"/>
-      <g transform="translate(95,68) rotate(-20)">
-        <rect x="-9" y="-7" width="18" height="4" rx="1.5" fill="var(--text-secondary)"/>
-        <rect x="-9" y="3" width="18" height="4" rx="1.5" fill="var(--text-secondary)"/>
-        <rect x="-6" y="-4" width="13" height="8" rx="2" fill="var(--accent)"/>
-        <circle cx="1" cy="0" r="3.6" fill="var(--accent)" stroke="var(--bg)" stroke-width="0.7"/>
-        <line x1="1" y1="0" x2="13" y2="0" stroke="var(--accent)" stroke-width="2" stroke-linecap="round"/>
-      </g>
-    </svg>
-    <div class="sim-card-body">
-      <h3>Line-following robot</h3>
-      <p>A three-color sensor, a curved track you can reshape yourself, and a tank that learns to stay centered through trial and error.</p>
-      <span class="cta">Open the line-follower simulator &rarr;</span>
-    </div>
-  </a>
-</div>
 
 <footer>
   Self-contained — open this file in any browser, no server or internet connection required (the further-reading

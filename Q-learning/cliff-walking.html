@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cliff Walking — Q-learning vs SARSA</title>
+<link rel="stylesheet" href="base.css">
+<link rel="stylesheet" href="sim.css">
+</head>
+<body>
+
+<a href="index.html" style="font-size:13px;color:var(--text-secondary);text-decoration:none;display:inline-block;margin-bottom:16px;">&larr; Back to Q-learning home</a>
+
+<h1>Cliff Walking: Q-learning vs SARSA</h1>
+<p class="subtitle">Same environment, same reward, two algorithms — and two very different learned routes.</p>
+
+<h2>The setup</h2>
+<p>
+  A long strip of grid: the tank starts at the bottom-left, the goal (flag) is at the bottom-right, and the entire
+  bottom row between them is a <strong>cliff</strong>. Stepping onto the cliff costs a large penalty and sends the
+  tank straight back to the start — but the episode keeps going, it doesn't end. Every ordinary step costs a small
+  penalty too, so the fastest route (right along the cliff edge) is tempting, but risky whenever an exploring
+  step accidentally goes the wrong way.
+</p>
+<p>
+  <strong>Q-learning</strong> updates using <code>max(Q(s&prime;))</code> — the value of the <em>best possible</em>
+  action from wherever it lands, regardless of what it actually does next. <strong>SARSA</strong> updates using
+  <code>Q(s&prime;,a&prime;)</code> — the value of whatever action it <em>actually takes</em> next, exploration
+  included. That difference sounds small, but it changes which route each algorithm considers "safe."
+</p>
+
+<div class="card">
+  <div class="sim-layout">
+    <div class="sim-sidebar">
+      <div class="sidebar-slider">
+        <label>Learning rate (&alpha;)</label>
+        <div class="slider-inline">
+          <input type="range" min="0.05" max="1" step="0.05" value="0.5" oninput="Cliff.setParam('ALPHA', this.value)">
+          <span id="cliff-alpha-out" class="slider-val">0.50</span>
+        </div>
+      </div>
+      <div class="sidebar-slider">
+        <label>Discount (&gamma;)</label>
+        <div class="slider-inline">
+          <input type="range" min="0" max="0.99" step="0.01" value="0.9" oninput="Cliff.setParam('GAMMA', this.value)">
+          <span id="cliff-gamma-out" class="slider-val">0.90</span>
+        </div>
+        <div id="cliff-gamma-chart"></div>
+      </div>
+      <div class="sidebar-slider">
+        <label>Exploration (&epsilon;)</label>
+        <div class="slider-inline">
+          <input type="range" min="0" max="1" step="0.05" value="0.1" oninput="Cliff.setParam('EPS', this.value)">
+          <span id="cliff-eps-out" class="slider-val">0.10</span>
+        </div>
+      </div>
+      <div class="sidebar-slider">
+        <label>Bot speed</label>
+        <div class="slider-inline">
+          <input type="range" min="1" max="10" step="1" value="5" oninput="Cliff.setSpeed(this.value)">
+          <span id="cliff-speed-out" class="slider-val">5</span>
+        </div>
+      </div>
+      <div class="sidebar-rewards">
+        <div>
+          <label>Step penalty</label>
+          <input type="number" step="0.5" value="-1" oninput="Cliff.setReward('stepPenalty',this.value)">
+        </div>
+        <div>
+          <label>Cliff penalty</label>
+          <input type="number" step="10" value="-100" oninput="Cliff.setReward('cliffPenalty',this.value)">
+        </div>
+        <div>
+          <label>Goal reward</label>
+          <input type="number" step="1" value="0" oninput="Cliff.setReward('goalReward',this.value)">
+        </div>
+      </div>
+    </div>
+
+    <div class="sim-main-col">
+      <div class="sim-top-row">
+        <div class="segmented">
+          <button class="seg-btn active" id="cliff-algo-ql-btn" onclick="Cliff.setAlgo('ql')">Q-learning</button>
+          <button class="seg-btn" id="cliff-algo-sarsa-btn" onclick="Cliff.setAlgo('sarsa')">SARSA</button>
+        </div>
+        <button class="reset-btn" onclick="Cliff.resetAll()">Reset both Q-tables</button>
+      </div>
+
+      <div id="cliff-stats" class="stats-row"></div>
+      <div id="cliff-grid" class="cliff-grid"></div>
+
+      <div class="sim-action-row">
+        <div class="train-control">
+          <input type="number" id="cliff-episode-input" min="0" max="9999" step="1" value="1500" style="width:78px;">
+          <span style="font-size:12px;color:var(--text-muted);">episodes</span>
+          <button class="primary-btn" onclick="Cliff.train()">Train</button>
+        </div>
+        <div>
+          <button onclick="Cliff.walkGreedy()">Walk learned path</button>
+          <button onclick="Cliff.comparePaths()">Compare both paths</button>
+        </div>
+      </div>
+
+      <p id="cliff-msg" class="status-msg">Training the active algorithm (Q-learning, selected above). Enter 1 episode for a full step-by-step animation, or more to train instantly. Try "Compare both paths" after training each for a while.</p>
+      <div id="cliff-log" class="log-panel"></div>
+      <table id="cliff-qtable" class="q-table"></table>
+      <div class="legend">
+        <span><span class="dot" style="background:var(--danger-bg); border:1px solid var(--danger);"></span>the cliff</span>
+        <span><span class="dot" style="background:var(--start-bg); border:1px solid var(--start);"></span>start</span>
+        <span><span class="dot" style="background:var(--goal-bg); border:1px solid var(--goal);"></span>goal</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<h2>Try this</h2>
+<p>
+  1. Train Q-learning for at least 1500&ndash;2000 episodes (the default in the box), then switch to SARSA and
+  train it the same amount — a few hundred isn't quite enough for either policy to fully settle.<br>
+  2. Click "Compare both paths" — Q-learning's route (blue) tends to hug the cliff edge, the shortest possible
+  path; SARSA's route (green) tends to take a detour a row or two further from the edge.<br>
+  3. Here's why: Q-learning always updates toward the <em>best</em> action from the next state, so it learns the
+  value of the optimal path even while its own exploring steps occasionally fall off. SARSA updates toward the
+  action it <em>actually takes</em> next — including the random exploratory ones — so walking right along the
+  edge looks worse to it, since a random slip while training there is genuinely costly to its own experience.<br>
+  4. Raise &epsilon; and retrain both — the gap between the two routes should widen, since more exploration means
+  more accidental cliff falls for SARSA to factor into its own path's value.
+</p>
+
+<footer>
+  Self-contained — open this file in any browser, no server or internet connection required. Built with Claude.
+</footer>
+
+<script src="cliff-walking.js"></script>
+
+</body>
+</html>

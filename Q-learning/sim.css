@@ -280,3 +280,7 @@
     border-top: 1px solid var(--border);
     padding-top: 16px;
   }
+
+  /* cliff-walking.html: a wide, short grid (columns set inline in JS). Reuses the shared .cell. */
+  .cliff-grid { display: grid; gap: 3px; width: 100%; margin: 0 auto 12px; }
+  .cliff-grid .cell { border-radius: 6px; font-size: 14px; }
