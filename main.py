@@ -46,8 +46,13 @@ PENTATONIC = [0, 2, 4, 7, 9]   # semitone offsets within an octave
 # Light voice: reflection below this = silence (cover the sensor to stop).
 LIGHT_GATE = 3          # reflection 0..100
 
-# Motor voice: how many degrees of rotation advance one note.
-DEGREES_PER_NOTE = 30
+# Motor voice: linear map from |position| to a MIDI note, rounded to nearest.
+#   |pos| = MOTOR_POS_MIN → MOTOR_NOTE_MIN,  |pos| = MOTOR_POS_MAX → MOTOR_NOTE_MAX.
+#   Clamped to the MOTOR_NOTE_MIN..MOTOR_NOTE_MAX range.
+MOTOR_POS_MIN  = 0
+MOTOR_POS_MAX  = 800
+MOTOR_NOTE_MIN = 65
+MOTOR_NOTE_MAX = 85
 
 UPDATE_MS = 60          # sensor/telemetry update period
 # ───────────────────────────────────────────────────────────────────────────
@@ -171,8 +176,11 @@ try:
             if pos is None:
                 target = None
             else:
-                idx = (pos // DEGREES_PER_NOTE) % N
-                target = SCALE[idx]
+                pos = abs(pos)
+                span = MOTOR_POS_MAX - MOTOR_POS_MIN
+                note = MOTOR_NOTE_MIN + (pos - MOTOR_POS_MIN) * (MOTOR_NOTE_MAX - MOTOR_NOTE_MIN) / span
+                note = int(round(note))
+                target = max(MOTOR_NOTE_MIN, min(MOTOR_NOTE_MAX, note))
 
             if target != last_motor_note:
                 if last_motor_note is not None:
