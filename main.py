@@ -4,16 +4,15 @@
 #   1. Connects (over BLE) to a LEGO Single Motor and a Color/Light sensor
 #      using the same method as the Examples (BLEDevice + Hub).
 #   2. Reads telemetry every loop:
-#        - Motor position (degrees)  → the MIDI NOTE (pitch)
-#        - Light "reflection" (0..100) → the VOLUME (MIDI CC 7, continuous)
+#        - Motor position (degrees)    → the MIDI NOTE (pitch)
+#        - Light "reflection" (0..100) → the TRIGGER: a >=30% swing fires a note
 #   3. Sends raw MIDI messages over UDP to the Pi, same wire format as before:
 #        note on  = [0x90 | ch, note, velocity]
 #        note off = [0x80 | ch, note, 0]
-#        volume   = [0xB0 | ch, 7, value]        (Channel Volume)
 #        program  = [0xC0 | ch, instrument]      (patch select, at startup)
 #
-# So: turn the motor to choose the pitch, and shine more/less light on the
-# sensor to swell/fade the volume — even while a note is held.
+# So: aim the pitch with the motor, then "strike" the note by changing the
+# light on the sensor (wave a hand, cover/uncover it).
 #
 # Tune everything in the CONFIG block below.
 
@@ -45,8 +44,10 @@ MOTOR_POS_MAX  = 800
 MOTOR_NOTE_MIN = 65
 MOTOR_NOTE_MAX = 85
 
-# Light → volume: reflection 0..100 maps to MIDI CC 7 volume 0..127.
-VOLUME_CC = 7           # 7 = Channel Volume
+# Light → trigger: fire a note when the reflection value changes by this much
+# (relative to the value at the last trigger). 0.30 = a 30% swing.
+TRIGGER_PCT   = 0.30
+TRIGGER_FLOOR = 2       # ...but require at least this many points of change (noise guard)
 
 UPDATE_MS = 60          # sensor/telemetry update period
 # ───────────────────────────────────────────────────────────────────────────
@@ -135,39 +136,42 @@ def motor_position(hub):
     return None
 
 
+def motor_note(hub):
+    """Current motor position → MIDI note (pitch), or None if no data yet."""
+    pos = motor_position(hub)
+    if pos is None:
+        return None, None
+    pos = abs(pos)
+    span = MOTOR_POS_MAX - MOTOR_POS_MIN
+    note = MOTOR_NOTE_MIN + (pos - MOTOR_POS_MIN) * (MOTOR_NOTE_MAX - MOTOR_NOTE_MIN) / span
+    note = int(round(note))
+    return max(MOTOR_NOTE_MIN, min(MOTOR_NOTE_MAX, note)), pos
+
+
 # ─── Main loop ─────────────────────────────────────────────────────────────
+# Motor position picks the pitch; a >=30% swing in reflection fires the note.
 last_note = None
-last_volume = None
+ref_reflection = None   # reflection value at the last trigger (the baseline)
 
 try:
     while True:
-        # --- Light reflection → volume (CC 7), continuous ---
         reflection = light.data.get('reflection')
         if reflection is not None:
-            volume = int(reflection * 127 / 100)
-            volume = max(0, min(127, volume))
-            if volume != last_volume:
-                control_change(CHANNEL, VOLUME_CC, volume)
-                last_volume = volume
-
-        # --- Motor position → note (pitch) ---
-        pos = motor_position(motor)
-        if pos is None:
-            target = None
-        else:
-            pos = abs(pos)
-            span = MOTOR_POS_MAX - MOTOR_POS_MIN
-            note = MOTOR_NOTE_MIN + (pos - MOTOR_POS_MIN) * (MOTOR_NOTE_MAX - MOTOR_NOTE_MIN) / span
-            note = int(round(note))
-            target = max(MOTOR_NOTE_MIN, min(MOTOR_NOTE_MAX, note))
-
-        if target != last_note:
-            if last_note is not None:
-                note_off(CHANNEL, last_note)
-            if target is not None:
-                note_on(CHANNEL, target, VELOCITY)
-                print("pos={:5}  note={}  vol={}".format(pos, target, last_volume))
-            last_note = target
+            if ref_reflection is None:
+                ref_reflection = reflection            # establish baseline, no trigger
+            else:
+                delta = abs(reflection - ref_reflection)
+                threshold = max(TRIGGER_FLOOR, TRIGGER_PCT * ref_reflection)
+                if delta >= threshold:
+                    note, pos = motor_note(motor)
+                    if last_note is not None:
+                        note_off(CHANNEL, last_note)   # release previous note
+                    if note is not None:
+                        note_on(CHANNEL, note, VELOCITY)
+                        print("TRIGGER  refl {}->{}  pos={}  note={}".format(
+                            ref_reflection, reflection, pos, note))
+                        last_note = note
+                    ref_reflection = reflection         # new baseline
 
         time.sleep_ms(UPDATE_MS)
 
