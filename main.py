@@ -76,11 +76,22 @@ print("WiFi connected! IP:", wlan.ifconfig()[0])
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
 
+def _send(msg):
+    # ESP32 WiFi send buffers can briefly fill up (OSError ENOMEM / EAGAIN).
+    # Retry a few times with a tiny pause instead of crashing.
+    for _ in range(5):
+        try:
+            sock.sendto(msg, (PI_IP, PI_PORT))
+            return
+        except OSError:
+            time.sleep_ms(3)
+    # gave up on this message; drop it rather than kill the loop
+
 def note_on(channel, note, velocity):
-    sock.sendto(bytes([0x90 | channel, note & 0x7F, velocity & 0x7F]), (PI_IP, PI_PORT))
+    _send(bytes([0x90 | channel, note & 0x7F, velocity & 0x7F]))
 
 def note_off(channel, note):
-    sock.sendto(bytes([0x80 | channel, note & 0x7F, 0]), (PI_IP, PI_PORT))
+    _send(bytes([0x80 | channel, note & 0x7F, 0]))
 
 
 # ─── LEGO connection (same method as the Examples) ─────────────────────────
