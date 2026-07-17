@@ -38,6 +38,10 @@ MOTOR_CHANNEL = 1
 
 VELOCITY = 100          # 1..127 loudness of every note
 
+# General MIDI instrument (program number, 0-based wire value).
+# 57 = Trombone (GM program 58).  Sent as a Program Change at startup.
+INSTRUMENT = 57
+
 # Musical scale used for both voices (C-major pentatonic, 2 octaves = 10 notes).
 ROOT      = 60          # MIDI note 60 = middle C
 OCTAVES   = 2
@@ -98,6 +102,9 @@ def note_on(channel, note, velocity):
 def note_off(channel, note):
     _send(bytes([0x80 | channel, note & 0x7F, 0]))
 
+def program_change(channel, program):
+    _send(bytes([0xC0 | channel, program & 0x7F]))
+
 
 # ─── LEGO connection (same method as the Examples) ─────────────────────────
 ble = BLEDevice()
@@ -131,6 +138,12 @@ if USE_MOTOR:
     motor.feed(UPDATE_MS)
 
 print("\n*** LEGO connected — make some noise! ***\n")
+
+# Set the instrument (trombone) on every voice's channel.
+if USE_LIGHT:
+    program_change(LIGHT_CHANNEL, INSTRUMENT)
+if USE_MOTOR:
+    program_change(MOTOR_CHANNEL, INSTRUMENT)
 time.sleep(0.5)
 
 
