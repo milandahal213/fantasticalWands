@@ -5,6 +5,7 @@ Builds the UI in the DOM, drives Web Bluetooth connections, streams telemetry,
 and runs card-selectable behaviors — all in the browser, no install.
 """
 import asyncio
+import inspect
 import sys
 import traceback
 
@@ -139,6 +140,24 @@ def byid(i):
     return document.getElementById(i)
 
 
+def behavior_source(mod):
+    """Return the .py source text behind a built-in behavior module, or None.
+
+    The behavior files are mounted into the Pyodide virtual FS, so we can read
+    them straight off disk; inspect.getsource is a fallback."""
+    path = getattr(mod, "__file__", None)
+    if path:
+        try:
+            with open(path, "r") as f:
+                return f.read()
+        except OSError:
+            pass
+    try:
+        return inspect.getsource(mod)
+    except (OSError, TypeError):
+        return None
+
+
 # ── telemetry field definitions per kind ────────────────────────────────────
 
 TELE_FIELDS = {
@@ -232,7 +251,31 @@ class App:
     def _reset_template(self):
         byid("code-editor").value = CODE_TEMPLATE
         self._console_clear()
-        self.console_log("Reset to template.")
+        self.console_log("Loaded the simple starter template.")
+
+    def _edit_behavior_code(self, evt, mod):
+        # Don't let the click bubble up and toggle the behavior on/off.
+        try:
+            evt.stopPropagation()
+        except Exception:
+            pass
+        self._load_behavior_code(mod)
+
+    def _load_behavior_code(self, mod):
+        """Show a built-in behavior's source in the editor so it can be tweaked
+        and run as custom code."""
+        src = behavior_source(mod)
+        if not src:
+            self.console_log(f"Couldn't load the source for “{mod.NAME}”.", error=True)
+            return
+        editor = byid("code-editor")
+        editor.value = src
+        self._console_clear()
+        self.console_log(
+            f"Loaded “{mod.NAME}” into the editor — tweak it, then click “▶ Run custom code”."
+        )
+        editor.scrollIntoView()
+        editor.focus()
 
     def _run_custom(self):
         # toggle off if it's already running
@@ -477,6 +520,11 @@ class App:
                 trig.appendChild(dot)
                 trig.appendChild(el("span", "trigger-label", text=f"{name} card"))
                 card.appendChild(trig)
+
+            # "View / edit code" — drop this behavior's source into the editor.
+            edit_btn = el("button", "code-btn", text="⟨⟩ View / edit code")
+            on(edit_btn, "click", lambda e, m=mod: self._edit_behavior_code(e, m))
+            card.appendChild(edit_btn)
 
             on(card, "click", lambda e, m=mod: self._toggle(m))
             row.appendChild(card)

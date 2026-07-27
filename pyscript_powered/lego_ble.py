@@ -31,6 +31,8 @@ DEVICE_NOTIFICATION_REQUEST = 40
 DEVICE_NOTIFICATION = 60
 PLAY_BEEP_COMMAND = 112
 MOTOR_RUN_COMMAND = 122
+MOTOR_RUN_TO_ABSOLUTE_POSITION_COMMAND = 128
+MOTOR_RUN_TO_RELATIVE_POSITION_COMMAND = 130
 MOTOR_STOP_COMMAND = 138
 MOTOR_SET_SPEED_COMMAND = 140
 MOVEMENT_MOVE_COMMAND = 150
@@ -44,6 +46,8 @@ MOTOR_BITS_RIGHT = 2
 MOTOR_BITS_BOTH = 3
 MOTOR_DIR_CLOCKWISE = 0
 MOTOR_DIR_COUNTERCLOCKWISE = 1
+MOTOR_DIR_SHORTEST = 2      # run-to-position: take the shortest arc
+MOTOR_DIR_LONGEST = 3
 MOVEMENT_DIR_FORWARD = 0
 MOVEMENT_DIR_BACKWARD = 1
 SOUND_BEEP_SINGLE = 0
@@ -131,6 +135,18 @@ def cmd_motor_stop(bit_mask):
 
 def cmd_motor_set_speed(bit_mask, speed):
     return _frame(MOTOR_SET_SPEED_COMMAND, struct.pack("<Bb", int(bit_mask), _clampb(speed)))
+
+
+def cmd_motor_run_to_absolute_position(bit_mask, position, direction=MOTOR_DIR_SHORTEST):
+    """Servo the shaft to an absolute angle. position is wrapped into 0–359."""
+    return _frame(MOTOR_RUN_TO_ABSOLUTE_POSITION_COMMAND,
+                  struct.pack("<BHB", int(bit_mask), int(position) % 360, int(direction)))
+
+
+def cmd_motor_run_to_relative_position(bit_mask, position):
+    """Rotate the shaft by a signed number of degrees relative to its current angle."""
+    return _frame(MOTOR_RUN_TO_RELATIVE_POSITION_COMMAND,
+                  struct.pack("<Bl", int(bit_mask), int(position)))
 
 
 def cmd_movement_move(direction):
@@ -245,6 +261,7 @@ class LegoDevice:
 
         # telemetry (None until first relevant notification)
         self.position = None
+        self.absolute_position = None   # single motor shaft angle, 0–359
         self.speed = None
         self.pos_l = self.pos_r = None
         self.speed_l = self.speed_r = None
@@ -272,6 +289,7 @@ class LegoDevice:
                         self.pos_r, self.speed_r = s.position, s.speed
                 else:
                     self.position, self.speed = s.position, s.speed
+                    self.absolute_position = s.absolutePosition
             elif s.type == _SUB_IMU:
                 self.yaw = s.yaw
             elif s.type == _SUB_CONTROLLER:
@@ -318,6 +336,21 @@ class LegoDevice:
             else:
                 self._send(cmd_motor_set_speed(mask, -speed))
                 self._send(cmd_motor_run(mask, MOTOR_DIR_COUNTERCLOCKWISE))
+
+    def run_to_position(self, degrees, speed=50, direction=MOTOR_DIR_SHORTEST):
+        """Single motor: servo the shaft to an absolute angle.
+
+        `degrees` is wrapped into 0–359 automatically. `speed` is the (positive)
+        rate at which the motor chases the target; it's applied before the move,
+        mirroring how run() sets speed then commands the motion.
+
+        `direction` picks the arc: MOTOR_DIR_SHORTEST (default) takes the nearest
+        way, while MOTOR_DIR_CLOCKWISE / MOTOR_DIR_COUNTERCLOCKWISE force the
+        rotation sense — use those to make the shaft follow the way an input
+        actually moved instead of snapping around the back."""
+        mask = MOTOR_BITS_LEFT
+        self._send(cmd_motor_set_speed(mask, max(1, min(100, abs(int(speed))))))
+        self._send(cmd_motor_run_to_absolute_position(mask, int(degrees), direction))
 
     def move_tank(self, left, right):
         """Double motor only: independent left/right speeds (-100..100)."""

@@ -212,6 +212,25 @@ main { padding: 18px 28px 60px; }
 .trigger { display: flex; align-items: center; gap: 6px; margin-top: 4px; }
 .trigger-dot { width: 13px; height: 13px; border-radius: 4px; display: inline-block; border: 1px solid rgba(0,0,0,.2); }
 .trigger-label { font-size: 11px; color: var(--fg-dim); }
+.code-btn {
+  margin-top: auto;
+  align-self: flex-start;
+  font-size: 11px;
+  font-family: inherit;
+  color: var(--fg-dim);
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 99px;
+  padding: 3px 10px;
+  cursor: pointer;
+  transition: background .15s, color .15s, border-color .15s;
+}
+.code-btn:hover { color: var(--fg); border-color: var(--accent); }
+.behavior-card.active .code-btn {
+  background: rgba(255,255,255,.18);
+  color: #fff;
+  border-color: rgba(255,255,255,.35);
+}
 
 /* ── custom behavior / editor ────────────────────────────── */
 .custom-section { margin-top: 34px; }
