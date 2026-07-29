@@ -360,4 +360,6 @@ class LegoDevice:
         if self.kind == KIND_DOUBLE:
             self._send(cmd_movement_stop())
         else:
-            self._send(cmd_motor_stop(MOTOR_BITS_BOTH))
+            # Single motor is addressed as bit mask 1 (matches run()); the
+            # firmware ignores a stop aimed at the nonexistent second motor.
+            self._send(cmd_motor_stop(MOTOR_BITS_LEFT))

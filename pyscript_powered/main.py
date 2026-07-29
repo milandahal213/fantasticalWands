@@ -267,6 +267,7 @@ class App:
         src = behavior_source(mod)
         if not src:
             self.console_log(f"Couldn't load the source for “{mod.NAME}”.", error=True)
+            self._set_status(f"Couldn't load the code for {mod.NAME}.", warn=True)
             return
         editor = byid("code-editor")
         editor.value = src
@@ -274,6 +275,7 @@ class App:
         self.console_log(
             f"Loaded “{mod.NAME}” into the editor — tweak it, then click “▶ Run custom code”."
         )
+        self._set_status(f"Loaded “{mod.NAME}” code into the editor below — scroll down to edit it.")
         editor.scrollIntoView()
         editor.focus()
 
@@ -541,6 +543,9 @@ class App:
 
     def _toggle(self, mod):
         if not self._available(mod):
+            # Can't run it without the required devices — show its code instead
+            # so people can still read and tweak it.
+            self._load_behavior_code(mod)
             return
         if self.active_behavior is mod:
             self._deactivate()

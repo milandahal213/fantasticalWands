@@ -17,6 +17,8 @@ Web Bluetooth notes:
     service so only LEGO hardware appears.
 """
 
+import asyncio
+
 from js import navigator, Uint8Array, Object
 from pyodide.ffi import create_proxy, to_js
 
@@ -45,6 +47,11 @@ def _dataview_to_bytes(value):
 
 
 class _Handle:
+    # Cap the outgoing queue so a BLE stall can't build unbounded latency;
+    # under backpressure we drop the oldest frames and keep the newest, which
+    # for the swing/mirror behaviors means the freshest motor target wins.
+    _MAX_QUEUE = 16
+
     def __init__(self, device, server, write_char, notify_char, proxies):
         self.device = device
         self._server = server
@@ -52,18 +59,39 @@ class _Handle:
         self._notify = notify_char
         self._proxies = proxies
         self.name = device.name or "LEGO device"
+        self._queue = []          # pending outgoing frames (bytes)
+        self._draining = False
 
     def send(self, data: bytes):
+        """Queue a command frame. Writes are drained one at a time.
+
+        Web Bluetooth allows only one GATT operation in flight per device, so
+        firing writes concurrently raises "GATT operation already in progress".
+        We enqueue here and let a single drain task await each write in turn."""
+        self._queue.append(data)
+        if len(self._queue) > self._MAX_QUEUE:
+            del self._queue[:-self._MAX_QUEUE]      # drop oldest under backpressure
+        if not self._draining:
+            self._draining = True
+            asyncio.ensure_future(self._drain())
+
+    async def _drain(self):
         try:
-            self._write.writeValueWithoutResponse(_to_buffer(data))
-        except Exception:
-            # Older Chromium spelled it writeValue; fall back.
-            try:
-                self._write.writeValue(_to_buffer(data))
-            except Exception as e:
-                print("BLE write failed:", e)
+            while self._queue:
+                data = self._queue.pop(0)
+                try:
+                    await self._write.writeValueWithoutResponse(_to_buffer(data))
+                except Exception:
+                    # Older Chromium spelled it writeValue; fall back.
+                    try:
+                        await self._write.writeValue(_to_buffer(data))
+                    except Exception as e:
+                        print("BLE write failed:", e)
+        finally:
+            self._draining = False
 
     async def disconnect(self):
+        self._queue.clear()          # stop draining; don't write to a dead device
         try:
             if self._server and self._server.connected:
                 self._server.disconnect()
