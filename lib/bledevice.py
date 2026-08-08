@@ -471,6 +471,26 @@ class BLEDevice:
         if s.get('conn_handle') is not None:
             self.ble.gap_disconnect(s['conn_handle'])
 
+    # ── advertising (broadcaster role) ────────────────────────────────────────
+    def advertise(self, payload, interval_us=100_000):
+        """Broadcast a raw (non-connectable) advertising payload on the shared
+        BLE radio. Call again with new bytes to update it. Used by advertise
+        mode to send an fd02 LEGO beacon — never runs while scanning/connecting."""
+        try:
+            self.ble.gap_advertise(None)
+        except Exception:
+            pass
+        try:
+            self.ble.gap_advertise(interval_us, adv_data=payload, connectable=False)
+        except Exception as e:
+            print("advertise error:", e)
+
+    def advertise_stop(self):
+        try:
+            self.ble.gap_advertise(None)
+        except Exception:
+            pass
+
     def _decode(self, payload):
         i = 0
         while i < len(payload):

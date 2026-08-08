@@ -94,7 +94,8 @@ def _find_rule_with_event(rules, event_opcode):
 
 
 
-def run_program_loop(wand, ble, scan_ms=700, on_data=None, poll_ms=100):
+def run_program_loop(wand, ble, scan_ms=700, on_data=None, poll_ms=100,
+                     should_exit=None):
     """Top-level loop. Forever:
       PAIRING_IDLE → PAIRED_IDLE → PROGRAMMING → RUNNING → PROGRAMMING ...
 
@@ -102,6 +103,10 @@ def run_program_loop(wand, ble, scan_ms=700, on_data=None, poll_ms=100):
         wand.bound_card  – pairing card (color, serial), or None
         wand.connections – list of (slot, hub, info)
         wand.program     – list of {'event': opcode, 'body': [opcodes]}
+
+    should_exit – optional zero-arg callable polled once per idle iteration;
+        when it returns True the loop returns (used to toggle back to advertise
+        mode). Default None = the original never-returns behaviour.
     """
 
     ui = _get_or_make_ui(wand)
@@ -113,6 +118,8 @@ def run_program_loop(wand, ble, scan_ms=700, on_data=None, poll_ms=100):
     ui.clear_all()
 
     while True:
+        if should_exit is not None and should_exit():
+            return
         card = read_card_universal(wand, timeout_ms=poll_ms)
         if card is None:
             if state == STATE_PAIRING_IDLE:

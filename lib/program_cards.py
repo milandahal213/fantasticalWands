@@ -463,6 +463,38 @@ def read_card_universal(wand, timeout_ms=200):
     return color, serial
 
 
+def read_card_universal_full(wand, timeout_ms=200):
+    """Like read_card_universal() but also returns the NFC UID and the raw
+    colour byte. Returns (uid, raw_color, color, serial) or None.
+
+    The UID is needed to compute a card's LEGO beacon hash (advertise mode);
+    the raw colour byte is what goes into the beacon (colour before remap)."""
+    if not wand._nfc_ready:
+        return None
+
+    uid = _get_uid(wand, timeout_ms=timeout_ms)
+    if uid is None:
+        return None
+
+    data = _read_block(wand, TARGET_BLOCK)
+    if data is None:
+        # MIFARE Classic path: re-select then authenticate.
+        uid = _get_uid(wand, timeout_ms=500)
+        if uid is None:
+            return None
+        key, use_key_b = _authenticate_multikey(wand, TARGET_BLOCK, uid)
+        if key is None:
+            return None
+        data = _read_block(wand, TARGET_BLOCK)
+        if data is None:
+            return None
+
+    raw_color = data[1]
+    color     = remap_color(raw_color)
+    serial    = (data[2] << 8) | data[3]
+    return bytes(uid), raw_color, color, serial
+
+
 # ── Public write API ─────────────────────────────────────────────────
 
 def write_card_serial(wand, serial, color_byte=0, block=TARGET_BLOCK):
