@@ -1,0 +1,12 @@
+# macOS
+.DS_Store
+
+# Python bytecode / caches
+__pycache__/
+*.py[cod]
+
+# MicroPython
+*.mpy
+
+# Claude Code
+.claude/
