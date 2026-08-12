@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>LEGO Tap-Connect</title>
+  <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="https://pyscript.net/releases/2024.11.1/core.css" />
+  <script type="module" src="https://pyscript.net/releases/2024.11.1/core.js"></script>
+  <script src="micropico.js"></script>
+  <script src="ui.js"></script>
+</head>
+<body>
+  <header>
+    <div class="header-row">
+      <h1>LEGO Tap-Connect</h1>
+      <div class="conn">
+        <button id="btn-connect" class="primary">Connect Pico</button>
+        <button id="btn-disconnect" class="ghost" disabled>Disconnect</button>
+        <span id="status" class="status off">not connected</span>
+      </div>
+    </div>
+    <nav>
+      <a href="#build">Build the box</a>
+      <a href="#flash">Load the code</a>
+      <a href="#project1">Tap &amp; Connect</a>
+      <a href="#bridge">The Bridge</a>
+      <a href="#i2c">I²C sensor</a>
+      <a href="#pins">Header pins</a>
+    </nav>
+  </header>
+
+  <main>
+    <!-- ============ BUILD (Instructables-style) ============ -->
+    <section id="page-build" class="page">
+      <div class="page-head">
+        <span class="kicker">Guide</span>
+        <h2>Build the box</h2>
+        <p class="lede">A tap-to-connect controller for LEGO Education motors and
+          sensors, built on a Raspberry Pi Pico W. Follow the steps to print,
+          wire, and assemble it. Budget about an evening plus print time.</p>
+      </div>
+
+      <div class="need">
+        <div class="need-col">
+          <h3>Parts</h3>
+          <ul>
+            <li>Raspberry Pi Pico W</li>
+            <li>WS1850S RFID/NFC reader (M5Stack RFID2)</li>
+            <li>0.66" SSD1306 OLED, 64×64 (optional)</li>
+            <li>Passive buzzer</li>
+            <li>WS2812 NeoPixel (1)</li>
+            <li>Momentary push button</li>
+            <li>NTAG21x cards / the LEGO connection cards</li>
+            <li>Hookup wire, headers</li>
+          </ul>
+        </div>
+        <div class="need-col">
+          <h3>Tools</h3>
+          <ul>
+            <li>3D printer + filament</li>
+            <li>Soldering iron</li>
+            <li>USB cable (data, not charge-only)</li>
+            <li>Chrome or Edge on a computer</li>
+          </ul>
+        </div>
+      </div>
+
+      <ol class="steps">
+        <li class="step">
+          <div class="step-body">
+            <h3>Print the enclosure</h3>
+            <div class="photo">STL preview / print photo</div>
+            <p>Download the STL files and print at 0.2 mm layer height. No supports
+              needed for the lid; the base needs supports under the card slot.</p>
+            <p class="downloads"><a href="#" class="btn-link">⬇ base.stl</a>
+              <a href="#" class="btn-link">⬇ lid.stl</a></p>
+          </div>
+        </li>
+        <li class="step">
+          <div class="step-body">
+            <h3>Wire the Pico</h3>
+            <div class="photo">wiring photo</div>
+            <p>Solder the modules to the Pico following this map:</p>
+            <table class="wire">
+              <tr><th>Module</th><th>Pico pins</th></tr>
+              <tr><td>NFC reader (I²C)</td><td>SDA → GP26, SCL → GP27, 3V3, GND</td></tr>
+              <tr><td>OLED (I²C, optional)</td><td>SDA → GP4, SCL → GP5, 3V3, GND</td></tr>
+              <tr><td>Buzzer</td><td>GP18 → +, GND</td></tr>
+              <tr><td>NeoPixel</td><td>DIN → GP28, 3V3, GND</td></tr>
+              <tr><td>Button</td><td>GP20 → GND</td></tr>
+            </table>
+          </div>
+        </li>
+        <li class="step">
+          <div class="step-body">
+            <h3>Assemble</h3>
+            <div class="photo">assembly photo</div>
+            <p>Seat the Pico and reader in the base, route the button and NeoPixel
+              to the lid, and snap it together. Leave the USB port accessible.</p>
+          </div>
+        </li>
+        <li class="step">
+          <div class="step-body">
+            <h3>Next: load the code</h3>
+            <p>With the box built and plugged in, head to the next page to flash
+              the firmware straight from this browser.</p>
+          </div>
+        </li>
+      </ol>
+    </section>
+
+    <!-- ============ FLASH ============ -->
+    <section id="page-flash" class="page">
+      <div class="page-head">
+        <span class="kicker">Setup</span>
+        <h2>Load the code onto your Pico</h2>
+        <p class="lede">Connect the Pico (top-right), then flash. This copies every
+          module to the board over USB and reboots it — no Thonny needed.</p>
+      </div>
+      <button id="btn-flash" disabled>Flash firmware</button>
+      <span id="flash-progress" class="progress"></span>
+      <p class="hint">Not connected yet? Click <b>Connect Pico</b> at the top and pick
+        the serial port. Desktop Chrome/Edge only.</p>
+    </section>
+
+    <!-- ============ PROJECT 1 ============ -->
+    <section id="page-project1" class="page">
+      <div class="page-head">
+        <span class="kicker">Project 1</span>
+        <h2>Tap &amp; Connect</h2>
+      </div>
+      <p><b>What you need:</b> the box, a LEGO device (Single/Double Motor, Color
+        Sensor, or Controller) powered on, and its connection card.</p>
+      <p><b>What to expect:</b> tap a card and the box finds that device over
+        Bluetooth and connects. It doesn't drive anything yet — this proves the
+        reader and radio work. Press the box button to disconnect.</p>
+      <label class="oled-toggle"><input type="checkbox" id="p1-oled" /> Is an OLED attached?</label>
+      <div class="actions">
+        <button id="p1-run" disabled>▶ Run</button>
+        <button id="p1-stop" class="ghost" disabled>■ Stop</button>
+      </div>
+    </section>
+
+    <!-- ============ BRIDGE ============ -->
+    <section id="page-bridge" class="page">
+      <div class="page-head">
+        <span class="kicker">Project 2</span>
+        <h2>The Bridge</h2>
+        <p class="lede">The Pico bridges a source (controller or sensor) to the
+          motors. Pick a behavior, then tap the card on each device it needs and
+          tap the Pico — it connects to all of them and runs.</p>
+      </div>
+
+      <div class="card-grid">
+        <button class="beh-card" data-beh="tank">
+          <svg viewBox="0 0 48 48" aria-hidden="true"><rect x="6" y="16" width="36" height="10" rx="5"/><rect x="6" y="30" width="36" height="8" rx="4"/><circle cx="14" cy="21" r="2"/><circle cx="34" cy="21" r="2"/></svg>
+          <h3>Tank Drive</h3>
+          <p>Left &amp; right sticks drive the two wheels independently.</p>
+          <div class="needs"><span>Controller</span><span>Double Motor</span></div>
+        </button>
+
+        <button class="beh-card" data-beh="arcade">
+          <svg viewBox="0 0 48 48" aria-hidden="true"><circle cx="24" cy="32" r="9"/><line x1="24" y1="32" x2="24" y2="12"/><circle cx="24" cy="10" r="4"/></svg>
+          <h3>Arcade Drive</h3>
+          <p>One stick: push to go, tilt left/right to steer.</p>
+          <div class="needs"><span>Controller</span><span>Double Motor</span></div>
+        </button>
+
+        <button class="beh-card" data-beh="color_speed">
+          <svg viewBox="0 0 48 48" aria-hidden="true"><path d="M10 34 A14 14 0 0 1 38 34"/><line x1="24" y1="34" x2="33" y2="24"/><circle cx="24" cy="34" r="2.5"/></svg>
+          <h3>Color Speed</h3>
+          <p>Brighter surface = faster. Reflection sets the drive speed.</p>
+          <div class="needs"><span>Color Sensor</span><span>Double Motor</span></div>
+        </button>
+
+        <button class="beh-card" data-beh="color_steer">
+          <svg viewBox="0 0 48 48" aria-hidden="true"><circle cx="24" cy="24" r="15"/><circle cx="24" cy="24" r="4"/><line x1="24" y1="20" x2="24" y2="9"/><line x1="27.5" y1="26" x2="37" y2="31"/><line x1="20.5" y1="26" x2="11" y2="31"/></svg>
+          <h3>Color + Steer</h3>
+          <p>Color sets the speed; the joystick steers.</p>
+          <div class="needs"><span>Color Sensor</span><span>Controller</span><span>Double Motor</span></div>
+        </button>
+
+        <button class="beh-card" data-beh="knob">
+          <svg viewBox="0 0 48 48" aria-hidden="true"><circle cx="24" cy="24" r="14"/><line x1="24" y1="24" x2="24" y2="12"/><line x1="24" y1="6" x2="24" y2="9"/><line x1="42" y1="24" x2="39" y2="24"/><line x1="6" y1="24" x2="9" y2="24"/></svg>
+          <h3>Knob Throttle</h3>
+          <p>Turn the single motor like a dial to set drive speed.</p>
+          <div class="needs"><span>Single Motor</span><span>Double Motor</span></div>
+        </button>
+
+        <button class="beh-card" data-beh="tilt">
+          <svg viewBox="0 0 48 48" aria-hidden="true"><rect x="10" y="16" width="28" height="16" rx="3" transform="rotate(-15 24 24)"/><path d="M38 10 l4 3 -4 3"/><path d="M42 13 h-8"/></svg>
+          <h3>Tilt Drive</h3>
+          <p>Tilt the double motor; its motion drives the single motor.</p>
+          <div class="needs"><span>Double Motor</span><span>Single Motor</span></div>
+        </button>
+      </div>
+
+      <div id="bridge-setup" class="setup hidden">
+        <h3 id="setup-title"></h3>
+        <p id="setup-desc" class="muted"></p>
+        <ol class="setup-steps">
+          <li>Tap the connection card on each device: <b id="setup-needs"></b>.</li>
+          <li>Tap the card on the Pico. It scans, connects to all of them, then runs.</li>
+          <li>Press the box button to stop.</li>
+        </ol>
+        <label class="oled-toggle"><input type="checkbox" id="bridge-oled" /> Is an OLED attached?</label>
+        <div class="actions">
+          <button id="bridge-run" disabled>▶ Start</button>
+          <button id="bridge-stop" class="ghost" disabled>■ Stop</button>
+        </div>
+        <p class="hint" id="bridge-hint">Connect the Pico (top-right) to enable Start.</p>
+      </div>
+    </section>
+
+    <!-- ============ I2C (placeholder) ============ -->
+    <section id="page-i2c" class="page">
+      <div class="page-head">
+        <span class="kicker">Extend</span>
+        <h2>Add an I²C sensor <span class="tag">coming next</span></h2>
+      </div>
+      <p>Pick a supported I²C sensor from a dropdown and map its reading to a motor
+        feature.</p>
+    </section>
+
+    <!-- ============ PINS (placeholder) ============ -->
+    <section id="page-pins" class="page">
+      <div class="page-head">
+        <span class="kicker">Extend</span>
+        <h2>Your own sensors <span class="tag">coming next</span></h2>
+      </div>
+      <p>A code editor + REPL for wiring photoresistors, pots, and buttons to the
+        header pins to control the motors.</p>
+    </section>
+
+    <footer class="pager">
+      <button id="nav-back" class="ghost pager-btn"></button>
+      <span id="page-progress" class="page-progress"></span>
+      <button id="nav-next" class="primary pager-btn"></button>
+    </footer>
+  </main>
+
+  <!-- persistent console (survives page switches) -->
+  <div id="drawer" class="drawer">
+    <div class="drawer-bar">
+      <span class="drawer-title">Pico output</span>
+      <span class="drawer-tools">
+        <button id="btn-clear" class="mini">Clear</button>
+        <button id="drawer-toggle" class="mini">▼</button>
+      </span>
+    </div>
+    <pre id="repl" class="repl">(connect the Pico to begin)</pre>
+  </div>
+
+  <script type="py" src="app.py" config="pyscript.toml"></script>
+</body>
+</html>

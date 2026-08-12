@@ -1,0 +1,10 @@
+[
+  "ws1850s.py",
+  "ssd1306.py",
+  "font5x7.py",
+  "nfc_serial.py",
+  "sensors.py",
+  "lego_broadcast.py",
+  "broadcast_main.py",
+  "main.py"
+]
