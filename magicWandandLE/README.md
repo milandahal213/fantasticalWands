@@ -51,6 +51,61 @@ recognized card tap; entering/re-entering tap-programming additionally plays a
 longer "tu-du-tu-tu, (pause)" x4 jingle right as the scan for matching devices
 begins.
 
+## Tap programming — cards & opcodes (GREEN / BLUE mode)
+
+A program is a **deck of up to 4 rules**, each `{event card} → up to 4 action
+cards`. Tap an EVENT card to start a new rule (re-tapping the same event
+replaces that rule); tap any other programming card to append it to the
+*current* rule's body. Tap **GO** to run the deck: every rule's event is
+polled each loop, and when one fires (on its rising edge) its body runs start
+to finish before the next event is checked.
+
+Every programming card is an NFC tag whose **serial number** — not its
+colour — selects the opcode; the catalog lives in `lib/program_cards.py`'s
+`OPCODES` table, and `tools/write_card.py` writes a chosen serial onto a
+blank card. Each category has its own LED colour (used for tap-acknowledgment
+flashes and the deck display).
+
+**META** (white)
+| Card | Effect |
+|---|---|
+| GO | run the assembled deck |
+| STOP | halt a running deck — the program is **kept**, not erased |
+| ERASE | clear the whole deck |
+| PROGRAM_MODE | return to assembling rules |
+| BATTERY | show battery % — works any time, doesn't interrupt a run |
+
+**EVENT** (yellow) — tap to start a new rule; fires once per rising edge
+| Card | Fires when... | Needs |
+|---|---|---|
+| when button pressed | the wand's button transitions to pressed | — |
+| when wand shaken | recent motion energy crosses a threshold (with hysteresis so one shake can't double-fire) | — |
+| when RED / GREEN / BLUE / YELLOW detected | the colour sensor's reading first matches that colour | Color Sensor |
+| when left/right joystick = +1 / −1 | that stick is pushed fully to its positive/negative extreme | Controller |
+
+**MOTION — Double Motor** (teal)
+| Card | Effect |
+|---|---|
+| move forward / backward 1 step | drive 1 rotation — **blocks** until done |
+| keep moving forward / backward | starts continuously — returns immediately |
+| both motors stop | halts both motors |
+| turn left / right 90° | in-place turn — blocks until done |
+
+**MOTION — Single Motor** (teal)
+| Card | Effect |
+|---|---|
+| single motor 90° CW / CCW | rotate ~90° — blocks until done |
+| run single motor CW / CCW | starts continuously — returns immediately |
+| stop single motor | halts the single motor |
+
+A MOTION card is rejected (error beep, ignored) if its required device
+(Double Motor / Single Motor) isn't connected yet. `CAT_CONTROL` and
+`CAT_SENSING` are defined categories (with reserved LED colours) that have no
+cards implemented yet — everything sensing-related today is an EVENT card.
+
+To add a new card: add an entry to `OPCODES` with an unused serial (9000+),
+then write that serial onto a blank NFC card with `tools/write_card.py`.
+
 ## Files
 
 | File | Role |
