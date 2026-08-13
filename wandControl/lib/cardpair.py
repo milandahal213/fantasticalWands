@@ -190,6 +190,14 @@ def _scan_and_connect(wand, ble, card_color, card_serial,
         ui.vibrate(30)
         return []
 
+    # Audible "starting to scan" cue — every tap-programming scan (initial
+    # connect or a re-tap looking for more devices) gets this before the
+    # actual BLE discover starts.
+    try:
+        wand.play_scan_jingle()
+    except Exception:
+        pass
+
     # ── Discover ─────────────────────────────────────────────────
     state = {'last_tick': 0, 'newly_finding': 0}
 

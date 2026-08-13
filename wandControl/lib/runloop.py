@@ -20,7 +20,7 @@ import time
 from cardpair import _scan_and_connect, _get_or_make_ui
 from program_cards import (
     lookup, is_pairing_card, is_event, category_color,
-    read_card_universal,
+    read_card_universal, read_card_universal_full,
     CAT_META, CAT_MOTION, CAT_SENSING, CAT_EVENT, CAT_CONTROL)
 from program_runtime import execute_event_loop
 from wand_ui import MAX_DEVICES
@@ -95,7 +95,7 @@ def _find_rule_with_event(rules, event_opcode):
 
 
 def run_program_loop(wand, ble, scan_ms=700, on_data=None, poll_ms=100,
-                     should_exit=None):
+                     should_exit=None, mode_switch=None):
     """Top-level loop. Forever:
       PAIRING_IDLE → PAIRED_IDLE → PROGRAMMING → RUNNING → PROGRAMMING ...
 
@@ -107,6 +107,11 @@ def run_program_loop(wand, ble, scan_ms=700, on_data=None, poll_ms=100,
     should_exit – optional zero-arg callable polled once per idle iteration;
         when it returns True the loop returns (used to toggle back to advertise
         mode). Default None = the original never-returns behaviour.
+
+    mode_switch – optional callable(uid, raw_color, color, serial) polled on
+        every card tap (while not mid-run). If it returns a truthy value, the
+        loop returns that value immediately — used to jump to a different card
+        mode (e.g. tapping a green/purple card leaves tap-programming).
     """
 
     ui = _get_or_make_ui(wand)
@@ -120,15 +125,23 @@ def run_program_loop(wand, ble, scan_ms=700, on_data=None, poll_ms=100,
     while True:
         if should_exit is not None and should_exit():
             return
-        card = read_card_universal(wand, timeout_ms=poll_ms)
+        card = read_card_universal_full(wand, timeout_ms=poll_ms)
         if card is None:
             if state == STATE_PAIRING_IDLE:
                 ui.tick_idle()
             time.sleep_ms(30)
             continue
 
-        color, serial = card
+        uid, raw_color, color, serial = card
         print("tap: color={} serial={}".format(color, serial))
+
+        # A card that belongs to a different MODE (e.g. green/purple) leaves
+        # tap-programming entirely — hand it back to main to dispatch.
+        if mode_switch is not None:
+            nxt = mode_switch(uid, raw_color, color, serial)
+            if nxt:
+                print("  → mode-switch card, leaving program mode")
+                return nxt
 
         opcode = lookup(serial)
 

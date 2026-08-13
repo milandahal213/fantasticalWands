@@ -15,6 +15,7 @@ _led = Pin(LED_PIN, Pin.OUT) if LED_PIN is not None else None
 def _led_set(state):
     if _led: _led.value(state)
 
+SERVICE_UUID_16_RAW = 0xFD02
 SERVICE_UUID_16  = bluetooth.UUID(0xfd02)
 SERVICE_UUID_128 = bluetooth.UUID('0000fd02-0000-1000-8000-00805f9b34fb')
 WRITE_UUID       = bluetooth.UUID('0000fd02-0001-1000-8000-00805f9b34fb')
@@ -74,6 +75,39 @@ def _parse_lego_mfg(adv_data):
     return None, None, None
 
 
+def _valid_stick_nibble(b):
+    """True if the broadcast byte's low nibble is a real stick reading
+    (0..3 = stop..+3, 0xD..0xF = -3..-1). 0x4..0xC is the protocol's own
+    'dead / out of range' band and should never come from a working stick —
+    seeing it means a corrupted or spurious packet, not a real position."""
+    n = b & 0x0F
+    return n <= 3 or n >= 0x0D
+
+
+def _parse_fd02_service(adv_data):
+    """Return the FD02 service-data payload (bytes after the 16-bit UUID) or None.
+
+    LEGO color sensors / controllers broadcast their live state here (see the
+    SimpleLE card_mode notes):
+        [0] device type (0x02 color sensor, 0x03 controller)
+        [1] card colour (firmware code)   [2] token   [3-4] serial (LE)
+        [5] color sensor: detected colour (firmware code, 0xff = none)
+        [5-6] controller: left / right stick axes
+    """
+    i = 0
+    while i < len(adv_data):
+        length = adv_data[i]
+        if length == 0 or i + length + 1 > len(adv_data):
+            break
+        # 0x16 = Service Data - 16-bit UUID
+        if adv_data[i + 1] == 0x16 and length >= 3:
+            uuid = adv_data[i + 2] | (adv_data[i + 3] << 8)
+            if uuid == SERVICE_UUID_16_RAW:
+                return bytes(adv_data[i + 4 : i + length + 1])
+        i += length + 1
+    return None
+
+
 def _new_slot():
     return {
         'conn_handle':  None,
@@ -121,6 +155,14 @@ class BLEDevice:
         self._discover_filter     = None # callable(name, pid, color, serial) -> bool
         self._discover_done       = False
 
+        # sensor-listen mode: passively read FD02 broadcasts (color sensor /
+        # controller live state) while (optionally) also advertising. Keyed by
+        # device type byte (0x02 = color sensor, 0x03 = controller).
+        self._sensor_active = False
+        self._sensor_serial = None       # only keep broadcasts from this card serial
+        self._sensor_color  = None       # ...AND this card colour (firmware byte)
+        self._sensor_state  = {}         # 0x02 -> {...}, 0x03 -> {...}
+
         self.ble.irq(self._irq)
         self._disconnect_callback = None   # optional: called with slot_name on disconnect
         _led_set(0)
@@ -132,6 +174,38 @@ class BLEDevice:
         if event == _IRQ_SCAN_RESULT:
             addr_type, addr, adv_type, rssi, adv_data = data
             addr_str = ':'.join('%02X' % b for b in addr)
+
+            # ── Sensor-listen mode: passively decode FD02 live state ──────
+            if self._sensor_active:
+                payload = _parse_fd02_service(adv_data)
+                if payload is not None and len(payload) >= 7:
+                    dtype  = payload[0]
+                    color  = payload[1]
+                    serial = payload[3] | (payload[4] << 8)
+                    # Only devices wearing the EXACT tapped card (colour AND
+                    # serial) — a serial alone is ambiguous across colours.
+                    if ((self._sensor_serial is None or serial == self._sensor_serial)
+                            and (self._sensor_color is None or color == self._sensor_color)):
+                        if dtype == 0x02:      # color sensor: byte5 = detected colour
+                            self._sensor_state[0x02] = {
+                                'color': payload[5], 't': time.ticks_ms()}
+                        elif dtype == 0x03:    # controller: byte6=LEFT, byte5=RIGHT
+                            # A dead/out-of-range nibble (see _valid_stick_nibble)
+                            # means a corrupted or spurious packet, not a real
+                            # stick position — hold the last valid reading for
+                            # that axis instead of snapping the display to
+                            # "stop" on every glitch.
+                            prev = self._sensor_state.get(0x03, {})
+                            left_raw, right_raw = payload[6], payload[5]
+                            self._sensor_state[0x03] = {
+                                'left':  left_raw  if _valid_stick_nibble(left_raw)
+                                         else prev.get('left', 0),
+                                'right': right_raw if _valid_stick_nibble(right_raw)
+                                         else prev.get('right', 0),
+                                't': time.ticks_ms()}
+                # fall through — a device could also be relevant to discover(),
+                # but in practice sensor-listen runs on its own.
+                return
 
             # ── Discover mode: collect everything that matches, don't connect
             if self._discover_active:
@@ -470,6 +544,39 @@ class BLEDevice:
         s = self._slots.get(slot, {})
         if s.get('conn_handle') is not None:
             self.ble.gap_disconnect(s['conn_handle'])
+
+    # ── sensor listen (passive FD02 broadcast reader) ─────────────────────────
+    def sensor_listen(self, card_serial=None, card_color=None):
+        """Start a continuous passive scan that decodes FD02 live state from
+        LEGO color sensors / controllers. Poll sensor_snapshot() for the latest.
+
+        card_serial / card_color – if given, ignore broadcasts from any other
+            card. Both are matched together (the (colour, serial) pair is the
+            real key — serials repeat across colours). card_color is the raw
+            firmware colour byte (== the card's stored colour byte).
+
+        NOTE: this runs gap_scan continuously. Advertising a drive beacon at the
+        same time relies on the radio doing concurrent advertise+scan; if a
+        board can't, switch the drive loop to time-slice (advertise, stop, scan)."""
+        self._sensor_serial = card_serial
+        self._sensor_color  = card_color
+        self._sensor_state  = {}
+        self._sensor_active = True
+        # duration 0 = scan until stopped; active scan to catch scan-response too
+        self.ble.gap_scan(0, 30000, 30000, True)
+
+    def sensor_stop(self):
+        self._sensor_active = False
+        try:
+            self.ble.gap_scan(None)
+        except Exception:
+            pass
+
+    def sensor_snapshot(self):
+        """Return a shallow copy of the latest decoded sensor state:
+            {0x02: {'color': <firmware code>, 't': ms},
+             0x03: {'left': b, 'right': b, 't': ms}}   (absent keys = not seen)."""
+        return dict(self._sensor_state)
 
     # ── advertising (broadcaster role) ────────────────────────────────────────
     def advertise(self, payload, interval_us=100_000):

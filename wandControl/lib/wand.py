@@ -334,6 +334,26 @@ class Wand:
         self.beep(1600,  60); time.sleep_ms(40)
         self.beep(2200, 180)
 
+    def play_card_tap_jingle(self):
+        """'tu-du-tu' — three quick notes, high-low-high. Played whenever a
+        connection card is tapped (selecting a mode, or switching to a new
+        one), so every card tap gets the same audible cue."""
+        self.beep(1800, 70); time.sleep_ms(40)
+        self.beep(1100, 90); time.sleep_ms(40)
+        self.beep(1800, 70)
+
+    def play_scan_jingle(self, repeats=4):
+        """'tu-du-tu-tu, (pause)' x N — a longer repeating chirp played every
+        time the wand starts scanning for devices to tap-program, so there's
+        clear, distinct audible feedback that a scan is underway (separate
+        from the shorter 3-note play_card_tap_jingle)."""
+        for _ in range(repeats):
+            self.beep(1800, 60); time.sleep_ms(30)
+            self.beep(1100, 60); time.sleep_ms(30)
+            self.beep(1800, 60); time.sleep_ms(30)
+            self.beep(1800, 60)
+            time.sleep_ms(180)
+
     # ── PN532 low level ─────────────────────────────────
     def _wait_ready(self, timeout=1000):
         start = time.ticks_ms()
