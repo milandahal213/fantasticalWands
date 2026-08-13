@@ -1,4 +1,4 @@
-# wandControl — the LEGO Education "Wand" (ESP32-C6)
+# magicWandandLE — the LEGO Education "Wand" (ESP32-C6)
 
 Firmware for a handheld wand that taps LEGO Education connection cards to
 control LEGO motors. The **colour of the tapped card selects the wand's
