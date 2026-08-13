@@ -46,7 +46,7 @@ CARDS = {
                                    "yellow = half, red = reverse — then drive as normal."),
     "motor_knob":      ("#f57d20", "Turn the single motor by hand and the drive motor copies "
                                    "it, moving to the same position. Let go and it holds."),
-    "dance":           ("#8e44ad", "Put wheels on a Double Motor. The Double Motor is "
+    "position_control":           ("#8e44ad", "Put wheels on a Double Motor. The Double Motor is "
                                    "preprogramed to dance. Watch and enjoy!"),
 }
 
