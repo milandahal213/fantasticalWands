@@ -1,7 +1,7 @@
 # Driving a LEGO Education motor from any device — broadcast recipe
 
 Make *any* device control a LEGO Education motor with **no pairing and no
-connection**, the way the wand does in `lib/legocast.py`. This is the one-page
+connection**, the way the wand does in `magicWandandLE/lib/legocast.py`. This is the one-page
 recipe to recreate it with a different sender (another micro, a phone bridge, a
 Pi, etc.).
 
@@ -108,4 +108,5 @@ while True:
 - **You never need the physical card** — read its UID/colour/serial once (or off any
   device already wearing it) and you can fabricate the beacon forever.
 
-Reference implementation: `lib/legocast.py` (this repo).
+Reference implementations: `magicWandandLE/lib/legocast.py` (ESP32-C6 wand) and
+`newTechE/lego_broadcast.py` (Pico W), both in this repo.
