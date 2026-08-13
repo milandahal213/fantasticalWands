@@ -62,8 +62,11 @@ begins.
 | `lib/runloop.py`, `lib/cardpair.py`, `lib/program_cards.py`, `lib/program_runtime.py`, `lib/wand_ui.py` | Tap-programming: state machine, device pairing/connect, card deck lookup, event-loop execution, LED deck UI |
 | `lib/newhub.py` | LEGO wireless protocol — GATT command/notification encode-decode for motors, sensors, controllers |
 | `lib/lis2dw12.py`, `lib/max17048.py`, `lib/buzzer.py` | Individual sensor/peripheral drivers |
-| `accel_test.py` | Standalone accelerometer readout test |
-| `broadcast_probe.py` | Diagnostic: dumps raw FD02/manufacturer-data broadcasts from every LEGO device in range, printing only on change — useful for reverse-engineering byte layouts |
+| `extras/accel_test.py` | Standalone accelerometer readout test |
+| `extras/broadcast_probe.py` | Diagnostic: dumps raw FD02/manufacturer-data broadcasts from every LEGO device in range, printing only on change — useful for reverse-engineering byte layouts |
+| `extras/MOTOR_BROADCAST_RECIPE.md` | One-page recipe for driving a LEGO motor by broadcast from *any* device (not just this wand) — the protocol reference behind `lib/legocast.py` |
+| `tools/KNOWLEDGE_BASE.md` | Design doc for the tap-programming system: pairing cards, programming cards, rules/deck, opcode model |
+| `tools/write_card.py` | Utility to write a programming-card opcode's serial onto a blank NFC tag (MIFARE Classic), for making new physical action/event cards |
 
 ## The FD02 broadcast protocol
 
@@ -102,6 +105,9 @@ broadcasts matching the exact card it was tapped with.
 
 ## Flashing
 
-Copy `main.py` to the device root and everything under `lib/` to the device's
-`/lib/` (MicroPython auto-adds `/lib` to the import path, so the unqualified
-`from wand import Wand`-style imports resolve as-is).
+Only `main.py` and `lib/` go on the device: copy `main.py` to the device root
+and everything under `lib/` to the device's `/lib/` (MicroPython auto-adds
+`/lib` to the import path, so the unqualified `from wand import Wand`-style
+imports resolve as-is). `extras/` and `tools/` are dev-machine-only —
+diagnostics, docs, and the card-writing utility — and don't need to be on
+the wand's filesystem.
