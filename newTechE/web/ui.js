@@ -4,10 +4,8 @@
 const PAGES = [
   { id: "build", title: "Build the box" },
   { id: "flash", title: "Load the code" },
-  { id: "project1", title: "Tap & Connect" },
-  { id: "bridge", title: "The Bridge" },
   { id: "i2c", title: "I²C sensor" },
-  { id: "pins", title: "Header pins" },
+  { id: "analog", title: "Analog sensor" },
 ];
 
 function currentIndex() {

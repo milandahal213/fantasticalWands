@@ -6,9 +6,14 @@
   <title>LEGO Tap-Connect</title>
   <link rel="stylesheet" href="style.css" />
   <link rel="stylesheet" href="https://pyscript.net/releases/2024.11.1/core.css" />
+  <script type="importmap">
+    { "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }
+  </script>
   <script type="module" src="https://pyscript.net/releases/2024.11.1/core.js"></script>
   <script src="micropico.js"></script>
   <script src="ui.js"></script>
+  <script src="ask-claude.js"></script>
+  <script type="module" src="stl-viewer.js"></script>
 </head>
 <body>
   <header>
@@ -23,10 +28,8 @@
     <nav>
       <a href="#build">Build the box</a>
       <a href="#flash">Load the code</a>
-      <a href="#project1">Tap &amp; Connect</a>
-      <a href="#bridge">The Bridge</a>
       <a href="#i2c">I²C sensor</a>
-      <a href="#pins">Header pins</a>
+      <a href="#analog">Analog sensor</a>
     </nav>
   </header>
 
@@ -45,23 +48,32 @@
         <div class="need-col">
           <h3>Parts</h3>
           <ul>
-            <li>Raspberry Pi Pico W</li>
-            <li>WS1850S RFID/NFC reader (M5Stack RFID2)</li>
-            <li>0.66" SSD1306 OLED, 64×64 (optional)</li>
-            <li>Passive buzzer</li>
-            <li>WS2812 NeoPixel (1)</li>
-            <li>Momentary push button</li>
-            <li>NTAG21x cards / the LEGO connection cards</li>
-            <li>Hookup wire, headers</li>
+            <li><a href="https://www.cytron.io/p-maker-pi-pico-mini-simplifying-projects-with-raspberry-pi-pico" target="_blank" rel="noopener">Maker Pi Pico Mini</a> — get the <b>Pico W (wireless)</b> variant; a plain Pico can't do Bluetooth</li>
+            <li><a href="https://www.adafruit.com/product/1578" target="_blank" rel="noopener">LiPo battery</a>, 3.7V 500mAh — plugs straight into the board's battery port</li>
+            <li><a href="https://shop.m5stack.com/products/rfid-unit-2-ws1850s" target="_blank" rel="noopener">RFID reader</a> — M5Stack RFID Unit 2 (WS1850S)</li>
           </ul>
+          <p class="hint">That's the whole required list — the Maker Pi Pico Mini
+            already has the NeoPixel, buzzer, and button this project uses built
+            in. You'll also need the LEGO connection card that came with your
+            LEGO Education motor.</p>
+          <p class="hint">Adding an <a href="#i2c">I²C sensor</a>? Two
+            known-good, plug-in options: a
+            <a href="https://www.sparkfun.com/sparkfun-micro-oled-breakout-qwiic-lcd-22495.html" target="_blank" rel="noopener">SparkFun Micro OLED</a>
+            or the
+            <a href="https://www.sparkfun.com/sparkfun-qwiic-joystick.html" target="_blank" rel="noopener">SparkFun Qwiic Joystick</a>
+            — both optional.</p>
+          <p class="hint">The two case halves bolt together, not snap:
+            4× <a href="https://a.co/d/0bFxv8ZI" target="_blank" rel="noopener">M2 heat-set inserts</a>
+            melted into the case cover's top face, secured with 4× M2×12mm bolts.</p>
         </div>
         <div class="need-col">
           <h3>Tools</h3>
           <ul>
             <li>3D printer + filament</li>
-            <li>Soldering iron</li>
             <li>USB cable (data, not charge-only)</li>
             <li>Chrome or Edge on a computer</li>
+            <li>Soldering iron — to set the heat-set inserts, and if wiring
+              raw analog sensors (LDRs/pots) rather than a plug-in I²C sensor</li>
           </ul>
         </div>
       </div>
@@ -69,35 +81,75 @@
       <ol class="steps">
         <li class="step">
           <div class="step-body">
-            <h3>Print the enclosure</h3>
-            <div class="photo">STL preview / print photo</div>
-            <p>Download the STL files and print at 0.2 mm layer height. No supports
-              needed for the lid; the base needs supports under the card slot.</p>
-            <p class="downloads"><a href="#" class="btn-link">⬇ base.stl</a>
-              <a href="#" class="btn-link">⬇ lid.stl</a></p>
+            <h3>Print the case cover</h3>
+            <div class="stl-viewer" data-parts='[
+                {"url":"CAD files/Case Cover/main Top.stl","color":"#c9cfe6"},
+                {"url":"CAD files/Case Cover/black Boundary.stl","color":"#1a1a1a"},
+                {"url":"CAD files/Case Cover/white Reflector.stl","color":"#f5f5f5","opacity":0.9}
+              ]'></div>
+            <p class="hint">Drag to rotate, scroll to zoom.</p>
+            <p>These three STL files are the three color regions of a single
+              multi-material print, not separate parts to glue together — the
+              main top, a black boundary trim, and a white light-diffuser
+              reflector all print together as one piece. This was printed on
+              a Prusa XL (2-toolhead / 2T). Print at 0.2 mm layer height; no
+              supports needed. No multi-material printer? Print the three
+              files separately on any single-material printer and glue them
+              together in the same arrangement instead.</p>
+            <p class="downloads">
+              <a href="CAD files/Case Cover/main Top.stl" class="btn-link" download>⬇ main Top.stl</a>
+              <a href="CAD files/Case Cover/black Boundary.stl" class="btn-link" download>⬇ black Boundary.stl</a>
+              <a href="CAD files/Case Cover/white Reflector.stl" class="btn-link" download>⬇ white Reflector.stl</a>
+            </p>
+          </div>
+        </li>
+        <li class="step">
+          <div class="step-body">
+            <h3>Print the back cover</h3>
+            <div class="stl-viewer" data-parts='[{"url":"CAD files/Case Back Cover.stl","color":"#c9cfe6"}]'></div>
+            <p class="hint">Drag to rotate, scroll to zoom.</p>
+            <p>Print at 0.2 mm layer height; supports needed under the card slot.</p>
+            <p class="downloads">
+              <a href="CAD files/Case Back Cover.stl" class="btn-link" download>⬇ Case Back Cover.stl</a>
+            </p>
           </div>
         </li>
         <li class="step">
           <div class="step-body">
             <h3>Wire the Pico</h3>
-            <div class="photo">wiring photo</div>
-            <p>Solder the modules to the Pico following this map:</p>
+            <p>No soldering needed for the core build — the Maker Pi Pico
+              Mini's three built-in "Maker Ports" (JST-SH, Qwiic/STEMMA
+              QT/Grove-compatible) line up exactly with what the firmware
+              expects:</p>
             <table class="wire">
-              <tr><th>Module</th><th>Pico pins</th></tr>
-              <tr><td>NFC reader (I²C)</td><td>SDA → GP26, SCL → GP27, 3V3, GND</td></tr>
-              <tr><td>OLED (I²C, optional)</td><td>SDA → GP4, SCL → GP5, 3V3, GND</td></tr>
-              <tr><td>Buzzer</td><td>GP18 → +, GND</td></tr>
-              <tr><td>NeoPixel</td><td>DIN → GP28, 3V3, GND</td></tr>
-              <tr><td>Button</td><td>GP20 → GND</td></tr>
+              <tr><th>Plug in</th><th>Maker Port GPIO</th></tr>
+              <tr><td>RFID reader (via its included Grove→JST-SH cable)</td><td>GP0 (SDA) / GP1 (SCL)</td></tr>
+              <tr><td>OLED and/or an I²C sensor — see <a href="#i2c">I²C sensor</a></td><td>GP4 (SDA) / GP5 (SCL)</td></tr>
+              <tr><td>Two analog sensors — see <a href="#analog">Analog sensor</a></td><td>GP26 (A0) / GP27 (A1)</td></tr>
+              <tr><td>LiPo battery</td><td>onboard 2-pin JST connector — nothing to wire</td></tr>
             </table>
+            <p class="hint">The onboard NeoPixel (already on GP28) shows the
+              tapped card's color automatically — also nothing to wire. The
+              analog Maker Port breaks out raw ADC pins rather than a
+              plug-and-play module: use a
+              <a href="https://www.adafruit.com/product/4209" target="_blank" rel="noopener">Qwiic to male headers</a>
+              cable to grab 3V3, GND, GP26, and GP27 as bare pins, or solder
+              the board's optional 0.1" header pins instead if you'd rather
+              wire it that way.</p>
           </div>
         </li>
         <li class="step">
           <div class="step-body">
             <h3>Assemble</h3>
-            <div class="photo">assembly photo</div>
-            <p>Seat the Pico and reader in the base, route the button and NeoPixel
-              to the lid, and snap it together. Leave the USB port accessible.</p>
+            <img src="case-assembly.png" alt="The assembled case, closed, showing the USB cutout and card slot" />
+            <p>Melt the 4 M2 heat-set inserts into the four holes on the case
+              cover's top face — a soldering iron pressed straight down on
+              each insert until it's flush and cools in place works well.
+              Seat the Maker Pi Pico Mini, LiPo battery, and RFID reader in
+              the back cover, position the case cover on top so the onboard
+              NeoPixel lines up with the reflector, close the two halves
+              together, then secure them with 4 M2×12mm bolts into the
+              inserts. Leave the USB port accessible.</p>
           </div>
         </li>
         <li class="step">
@@ -122,115 +174,290 @@
       <span id="flash-progress" class="progress"></span>
       <p class="hint">Not connected yet? Click <b>Connect Pico</b> at the top and pick
         the serial port. Desktop Chrome/Edge only.</p>
-    </section>
 
-    <!-- ============ PROJECT 1 ============ -->
-    <section id="page-project1" class="page">
-      <div class="page-head">
-        <span class="kicker">Project 1</span>
-        <h2>Tap &amp; Connect</h2>
+      <div class="page-head page-head-sub">
+        <h3>Run it and watch the console</h3>
+        <p class="lede">Connecting stops whatever's currently running on the
+          Pico (it needs a quiet REPL to talk to it), so use these to start it
+          back up. Output — including the I²C scan lines used on the sensor
+          pages — streams into the console drawer below.</p>
       </div>
-      <p><b>What you need:</b> the box, a LEGO device (Single/Double Motor, Color
-        Sensor, or Controller) powered on, and its connection card.</p>
-      <p><b>What to expect:</b> tap a card and the box finds that device over
-        Bluetooth and connects. It doesn't drive anything yet — this proves the
-        reader and radio work. Press the box button to disconnect.</p>
-      <label class="oled-toggle"><input type="checkbox" id="p1-oled" /> Is an OLED attached?</label>
       <div class="actions">
-        <button id="p1-run" disabled>▶ Run</button>
-        <button id="p1-stop" class="ghost" disabled>■ Stop</button>
+        <button id="run-run" disabled>▶ Run</button>
+        <button id="run-stop" class="ghost" disabled>■ Stop</button>
       </div>
     </section>
 
-    <!-- ============ BRIDGE ============ -->
-    <section id="page-bridge" class="page">
-      <div class="page-head">
-        <span class="kicker">Project 2</span>
-        <h2>The Bridge</h2>
-        <p class="lede">The Pico bridges a source (controller or sensor) to the
-          motors. Pick a behavior, then tap the card on each device it needs and
-          tap the Pico — it connects to all of them and runs.</p>
-      </div>
-
-      <div class="card-grid">
-        <button class="beh-card" data-beh="tank">
-          <svg viewBox="0 0 48 48" aria-hidden="true"><rect x="6" y="16" width="36" height="10" rx="5"/><rect x="6" y="30" width="36" height="8" rx="4"/><circle cx="14" cy="21" r="2"/><circle cx="34" cy="21" r="2"/></svg>
-          <h3>Tank Drive</h3>
-          <p>Left &amp; right sticks drive the two wheels independently.</p>
-          <div class="needs"><span>Controller</span><span>Double Motor</span></div>
-        </button>
-
-        <button class="beh-card" data-beh="arcade">
-          <svg viewBox="0 0 48 48" aria-hidden="true"><circle cx="24" cy="32" r="9"/><line x1="24" y1="32" x2="24" y2="12"/><circle cx="24" cy="10" r="4"/></svg>
-          <h3>Arcade Drive</h3>
-          <p>One stick: push to go, tilt left/right to steer.</p>
-          <div class="needs"><span>Controller</span><span>Double Motor</span></div>
-        </button>
-
-        <button class="beh-card" data-beh="color_speed">
-          <svg viewBox="0 0 48 48" aria-hidden="true"><path d="M10 34 A14 14 0 0 1 38 34"/><line x1="24" y1="34" x2="33" y2="24"/><circle cx="24" cy="34" r="2.5"/></svg>
-          <h3>Color Speed</h3>
-          <p>Brighter surface = faster. Reflection sets the drive speed.</p>
-          <div class="needs"><span>Color Sensor</span><span>Double Motor</span></div>
-        </button>
-
-        <button class="beh-card" data-beh="color_steer">
-          <svg viewBox="0 0 48 48" aria-hidden="true"><circle cx="24" cy="24" r="15"/><circle cx="24" cy="24" r="4"/><line x1="24" y1="20" x2="24" y2="9"/><line x1="27.5" y1="26" x2="37" y2="31"/><line x1="20.5" y1="26" x2="11" y2="31"/></svg>
-          <h3>Color + Steer</h3>
-          <p>Color sets the speed; the joystick steers.</p>
-          <div class="needs"><span>Color Sensor</span><span>Controller</span><span>Double Motor</span></div>
-        </button>
-
-        <button class="beh-card" data-beh="knob">
-          <svg viewBox="0 0 48 48" aria-hidden="true"><circle cx="24" cy="24" r="14"/><line x1="24" y1="24" x2="24" y2="12"/><line x1="24" y1="6" x2="24" y2="9"/><line x1="42" y1="24" x2="39" y2="24"/><line x1="6" y1="24" x2="9" y2="24"/></svg>
-          <h3>Knob Throttle</h3>
-          <p>Turn the single motor like a dial to set drive speed.</p>
-          <div class="needs"><span>Single Motor</span><span>Double Motor</span></div>
-        </button>
-
-        <button class="beh-card" data-beh="tilt">
-          <svg viewBox="0 0 48 48" aria-hidden="true"><rect x="10" y="16" width="28" height="16" rx="3" transform="rotate(-15 24 24)"/><path d="M38 10 l4 3 -4 3"/><path d="M42 13 h-8"/></svg>
-          <h3>Tilt Drive</h3>
-          <p>Tilt the double motor; its motion drives the single motor.</p>
-          <div class="needs"><span>Double Motor</span><span>Single Motor</span></div>
-        </button>
-      </div>
-
-      <div id="bridge-setup" class="setup hidden">
-        <h3 id="setup-title"></h3>
-        <p id="setup-desc" class="muted"></p>
-        <ol class="setup-steps">
-          <li>Tap the connection card on each device: <b id="setup-needs"></b>.</li>
-          <li>Tap the card on the Pico. It scans, connects to all of them, then runs.</li>
-          <li>Press the box button to stop.</li>
-        </ol>
-        <label class="oled-toggle"><input type="checkbox" id="bridge-oled" /> Is an OLED attached?</label>
-        <div class="actions">
-          <button id="bridge-run" disabled>▶ Start</button>
-          <button id="bridge-stop" class="ghost" disabled>■ Stop</button>
-        </div>
-        <p class="hint" id="bridge-hint">Connect the Pico (top-right) to enable Start.</p>
-      </div>
-    </section>
-
-    <!-- ============ I2C (placeholder) ============ -->
+    <!-- ============ I2C SENSOR ============ -->
     <section id="page-i2c" class="page">
       <div class="page-head">
-        <span class="kicker">Extend</span>
-        <h2>Add an I²C sensor <span class="tag">coming next</span></h2>
+        <span class="kicker">Input option</span>
+        <h2>Drive with an I²C sensor</h2>
+        <p class="lede">Plug a recognized I²C sensor into the GP4/GP5 bus (it
+          shares the bus with the OLED) and the box drives from it automatically —
+          no code changes, no menu to pick it. If a recognized sensor is present,
+          it always takes priority and the analog inputs are ignored.</p>
       </div>
-      <p>Pick a supported I²C sensor from a dropdown and map its reading to a motor
-        feature.</p>
+
+      <div class="need">
+        <div class="need-col">
+          <h3>Supported today</h3>
+          <ul>
+            <li><b><a href="https://www.sparkfun.com/sparkfun-qwiic-joystick.html" target="_blank" rel="noopener">SparkFun Qwiic Joystick</a></b> — I²C address <code>0x20</code></li>
+          </ul>
+        </div>
+        <div class="need-col">
+          <h3>Wiring</h3>
+          <ul>
+            <li>SDA → GP4, SCL → GP5</li>
+            <li>3V3, GND</li>
+            <li>Qwiic/Grove cables plug straight in</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="page-head page-head-sub">
+        <h3>How it works</h3>
+      </div>
+
+      <div class="need-col motor-control">
+        <h3>How you actually control the motors</h3>
+        <p>Whatever sensor you're using, there's exactly one place that
+          controls the motors: the <code>drive(reading, baseline)</code>
+          function you write for it. Whatever it returns —
+          <code>(left_pct, right_pct)</code>, each from <code>-100</code>
+          (full speed reverse) to <code>100</code> (full speed forward),
+          <code>0</code> = stop — becomes the box's next command. Equal
+          values drive straight; opposite signs pivot in place; one zero and
+          one nonzero turns like a tank.</p>
+        <p>That's the whole job. Everything after — packing those two
+          numbers into a Bluetooth broadcast ~25 times a second, and getting
+          a physical LEGO motor to obey it — already happens in
+          <code>broadcast_main.py</code>; you never touch it.</p>
+        <p>For a gesture sensor, the natural shape is a lookup table from
+          gesture name to a fixed <code>(left, right)</code> pair — the same
+          idea as the joystick's arcade mix below, just with named gestures
+          instead of stick position:</p>
+        <pre><code>_GESTURE_DRIVE = {
+    "forward":  (70, 70),     # both wheels same way = straight
+    "backward": (-70, -70),
+    "left":     (-70, 70),    # opposite signs = pivot in place
+    "right":    (70, -70),
+}
+
+def gesture_drive(reading, baseline):
+    return _GESTURE_DRIVE.get(reading, (0, 0))</code></pre>
+        <p class="hint">Robot spins the wrong way, or one wheel fights the
+          other going "straight"? That's motor mounting, not your drive
+          function — flip <code>INVERT_LEFT</code> / <code>INVERT_RIGHT</code>
+          near the top of <code>broadcast_main.py</code> instead of changing
+          your numbers.</p>
+      </div>
+
+      <div class="need">
+        <div class="need-col">
+          <h3>How it drives</h3>
+          <p>The joystick's X axis steers and Y axis throttles, mixed into an
+            arcade drive: <code>left = throttle + steer</code>,
+            <code>right = throttle − steer</code>. On first detect the box
+            captures the resting stick position as center, so it self-centers
+            wherever it happens to sit.</p>
+        </div>
+        <div class="need-col">
+          <h3>How it's detected</h3>
+          <p>Every ~800 ms the box re-scans both I²C buses (GP4/5 and the NFC
+            bus GP0/1) and checks addresses against a lookup table in
+            <code>sensors.py</code>. A matching address is verified with a
+            "whoami" register read before it's trusted. Hot-plugging works —
+            plug it in mid-run and it's picked up on the next scan.</p>
+        </div>
+      </div>
+
+      <div class="page-head page-head-sub">
+        <h3>Add your own sensor</h3>
+        <p class="lede">This is a separate, hands-on process — wiring in a
+          new sensor means editing the firmware itself. We recommend
+          <a href="https://thonny.org" target="_blank" rel="noopener">Thonny</a>
+          for it: a free, beginner-friendly editor built specifically for
+          MicroPython boards, with a live REPL and a simple drag-and-drop
+          file browser for the Pico.</p>
+      </div>
+
+      <ol class="steps">
+        <li class="step">
+          <div class="step-body">
+            <h3>Install Thonny and connect</h3>
+            <p>Download Thonny from <a href="https://thonny.org" target="_blank" rel="noopener">thonny.org</a>
+              (Windows/Mac/Linux) and open it. Plug in the Pico, then in
+              Thonny go to <b>Run → Select interpreter…</b> and choose
+              <b>MicroPython (Raspberry Pi Pico)</b> with the right port.</p>
+            <p class="hint">Thonny needs the USB port to itself. If this site
+              shows "connected" at the top, click <b>Disconnect</b> there
+              first — only one program can talk to the Pico at a time.</p>
+          </div>
+        </li>
+        <li class="step">
+          <div class="step-body">
+            <h3>Wire it up and find its address</h3>
+            <p>Connect the new sensor to the same four wires as any I²C
+              device: SDA → GP4, SCL → GP5, plus 3V3 and GND (Qwiic/Grove
+              cables carry all four in one plug). Then in Thonny's <b>Shell</b>
+              panel (bottom of the window), type:</p>
+            <pre><code>from machine import Pin, SoftI2C
+bus = SoftI2C(scl=Pin(5), sda=Pin(4))
+bus.scan()</code></pre>
+            <p>The list it returns is your sensor's address(es), in decimal —
+              e.g. <code>[115]</code> is <code>0x73</code>. You'll need that
+              address below.</p>
+          </div>
+        </li>
+        <li class="step">
+          <div class="step-body">
+            <h3>Get driver code and test it live</h3>
+            <p>You need two small functions: <code>read(bus, addr)</code>
+              (returns whatever raw value the sensor gives) and
+              <code>drive(reading, baseline)</code> (turns that into
+              <code>(left_pct, right_pct)</code>, each −100..100). The
+              <b>Ask Claude</b> button below can write these, but for
+              anything beyond a single-register sensor it needs the real
+              register map — give it the sensor's datasheet or an existing
+              Arduino/MicroPython library for it, not just the part name. If
+              it comes back with a stub and a TODO for the init sequence,
+              that's not a broken answer — it means go find that reference
+              (the manufacturer's Arduino library on GitHub is usually the
+              fastest source) and bring it back.</p>
+            <p>Before wiring anything into <code>sensors.py</code>, try it
+              straight in Thonny's Shell against the <code>bus</code> from the
+              step above — paste in the function definitions, then call, for
+              example:</p>
+            <pre><code>read(bus, 0x73)</code></pre>
+            <p>Run it a few times (move the sensor, trigger it, etc.) and
+              confirm you get sane values back before it's part of the
+              control loop.</p>
+          </div>
+        </li>
+        <li class="step">
+          <div class="step-body">
+            <h3>Add it to <code>sensors.py</code> and push it to the board</h3>
+            <p>Sensors are entries in a table, not special-cased code. If
+              your driver is more than a few lines (an init table, several
+              helper functions), save it as its own file next to
+              <code>sensors.py</code> — same folder as <code>ws1850s.py</code>,
+              <code>main.py</code>, etc. — and import it. A short driver can
+              just live inside <code>sensors.py</code> directly. Example, for
+              a new file <code>paj7620.py</code> with <code>gesture_read</code>
+              and <code>gesture_drive</code> functions:</p>
+            <pre><code># sensors.py
+import paj7620                      # &lt;- new file, same folder
+
+SENSORS = {
+    0x20: { ...existing joystick entry, unchanged... },
+
+    0x73: {                         # &lt;- new entry
+        "name": "Qwiic Gesture (PAJ7620U2)", "short": "Gesture",
+        "kind": "gesture", "id_reg": 0x00, "id_val": 0x20,
+        "needs_baseline": False,
+        "read": paj7620.gesture_read,
+        "drive": paj7620.gesture_drive,
+    },
+}</code></pre>
+            <p>Two commented templates are already in <code>sensors.py</code>
+              (a Qwiic Button and a VL53L0X distance sensor) showing this same
+              shape. Set <code>id_reg</code>/<code>id_val</code> if the sensor
+              has a "whoami" register — it stops a coincidental address match
+              on another device from being misread as yours.</p>
+            <p>To push both files to the board in Thonny: open each one
+              (<b>File → Open… → Raspberry Pi Pico</b>, or drag from your
+              computer in the <b>Files</b> panel — enable it under
+              <b>View → Files</b> if it's hidden), then
+              <b>File → Save As → Raspberry Pi Pico</b>, using the same
+              filename. That takes effect immediately.</p>
+            <p class="hint">Keep a copy of both files in your own repo clone
+              too (not just on the Pico). The site's <b>Flash</b> button
+              writes from your local clone, not from whatever's currently on
+              the board — if you skip this and later hit Flash, your sensor
+              files won't be part of it. Add the new filename to
+              <code>manifest.json</code> so Flash includes it going forward.</p>
+          </div>
+        </li>
+        <li class="step">
+          <div class="step-body">
+            <h3>Verify</h3>
+            <p>Back on the <a href="#flash">Load the code</a> page, Connect
+              the Pico and hit <b>▶ Run</b> — the console should now show your
+              sensor's name instead of "Analog" once it's detected.</p>
+          </div>
+        </li>
+      </ol>
+
+      <div class="ask-claude">
+        <div>
+          <h4>Stuck on wiring, detection, or adding a sensor?</h4>
+          <p class="muted">Opens a new Claude.ai chat with this project's
+            codebase context pre-loaded, so you can ask straight away without
+            explaining the setup first.</p>
+        </div>
+        <button data-ask-claude="I have a question about the I²C sensor input on this project.">Ask Claude</button>
+      </div>
     </section>
 
-    <!-- ============ PINS (placeholder) ============ -->
-    <section id="page-pins" class="page">
+    <!-- ============ ANALOG SENSOR ============ -->
+    <section id="page-analog" class="page">
       <div class="page-head">
-        <span class="kicker">Extend</span>
-        <h2>Your own sensors <span class="tag">coming next</span></h2>
+        <span class="kicker">Input option</span>
+        <h2>Drive with analog sensors</h2>
+        <p class="lede">Two analog inputs — GP26 for the left wheel, GP27 for
+          the right — read anything that outputs a variable voltage: LDRs
+          (photoresistors), potentiometers, or a joystick module with analog
+          outputs. This is the fallback input: it's only used when no
+          recognized I²C sensor (previous page) is present.</p>
       </div>
-      <p>A code editor + REPL for wiring photoresistors, pots, and buttons to the
-        header pins to control the motors.</p>
+
+      <div class="need">
+        <div class="need-col">
+          <h3>Wiring (per side)</h3>
+          <p>The analog Maker Port breaks out raw pins, not a plug-in module —
+            use a
+            <a href="https://www.adafruit.com/product/4209" target="_blank" rel="noopener">Qwiic to male headers</a>
+            cable to grab 3V3, GND, GP26, and GP27 as bare pins.</p>
+          <ul>
+            <li>3V3 → sensor / voltage-divider top</li>
+            <li>Sensor wiper/output → GP26 (left) or GP27 (right)</li>
+            <li>GND → sensor / voltage-divider bottom</li>
+          </ul>
+        </div>
+        <div class="need-col">
+          <h3>Tuning knobs (<code>broadcast_main.py</code>)</h3>
+          <ul>
+            <li><code>ANALOG_SPAN</code> — deflection from baseline = full speed</li>
+            <li><code>ANALOG_DEADZONE</code> — resting jitter to ignore</li>
+            <li><code>ANALOG_SAMPLES</code> — reads averaged per loop</li>
+          </ul>
+        </div>
+      </div>
+
+      <ol class="steps">
+        <li class="step">
+          <div class="step-body">
+            <h3>How it drives</h3>
+            <p>At boot the box averages a few reads on each pin and stores that
+              as the resting baseline — whatever your sensors read at rest
+              becomes "zero," so nothing needs to be centered by hand. Each loop,
+              deflection from that baseline maps to speed, ramping up from zero
+              right at the edge of the deadzone rather than jumping.</p>
+          </div>
+        </li>
+        <li class="step">
+          <div class="step-body">
+            <h3>Calibrating</h3>
+            <p>Watch the "raw n/n" line on the OLED or the console drawer below
+              while the box runs — that's the live ADC reading on each pin. Set
+              <code>ANALOG_SPAN</code> close to the actual swing between your
+              sensor's two extremes (e.g. dark vs. bright for an LDR), and raise
+              <code>ANALOG_DEADZONE</code> if the wheels twitch at rest.</p>
+          </div>
+        </li>
+      </ol>
     </section>
 
     <footer class="pager">
